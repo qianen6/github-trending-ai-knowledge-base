@@ -6,8 +6,9 @@
   --muted: #62676d;
   --line: #d9dddf;
   --accent: #176b5b;
-  --new: #a54d18;
-  --revived: #3a5a98;
+  --daily: #a54d18;
+  --weekly: #176b5b;
+  --monthly: #3a5a98;
   --code: #eef1ef;
   --shadow: 0 1px 2px rgba(20, 24, 28, 0.04);
 }
@@ -19,8 +20,9 @@
     --muted: #aab0b5;
     --line: #30363b;
     --accent: #70c7b2;
-    --new: #f0a36f;
-    --revived: #9eb7f2;
+    --daily: #f0a36f;
+    --weekly: #70c7b2;
+    --monthly: #9eb7f2;
     --code: #23272a;
     --shadow: none;
   }
@@ -64,8 +66,9 @@ h3 { font-size: 19px; margin: 0; }
 .card-top { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .repo { font: 700 17px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
 .badge { border: 1px solid var(--line); padding: 2px 8px; font: 700 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
-.badge.new { color: var(--new); border-color: color-mix(in srgb, var(--new) 45%, var(--line)); }
-.badge.revived { color: var(--revived); border-color: color-mix(in srgb, var(--revived) 45%, var(--line)); }
+.badge.daily { color: var(--daily); border-color: color-mix(in srgb, var(--daily) 45%, var(--line)); }
+.badge.weekly { color: var(--weekly); border-color: color-mix(in srgb, var(--weekly) 45%, var(--line)); }
+.badge.monthly { color: var(--monthly); border-color: color-mix(in srgb, var(--monthly) 45%, var(--line)); }
 .summary { color: var(--muted); margin: 18px 0; flex: 1; }
 .scoreline { display: flex; flex-wrap: wrap; gap: 9px 13px; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .scoreline span { color: var(--muted); }

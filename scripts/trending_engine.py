@@ -14,19 +14,20 @@ import json
 import os
 import re
 import tempfile
-from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TREND_PASS = 40.0
 QUALITY_PASS = 60
-AI_VALUE_PASS = 60
+VALUE_PASS = 60
 FINAL_PASS = 65.0
 NEW_HOT_DAYS = 90
-DAILY_FEATURE_LIMIT = 5
+PERIOD_FEATURE_LIMIT = 5
+PERIOD_ORDER = ("daily", "weekly", "monthly")
+PERIOD_LABELS = {"daily": "日榜", "weekly": "周榜", "monthly": "月榜"}
 
 PERIOD_WEIGHTS = {"weekly": 50, "daily": 20, "monthly": 15}
 RANK_WEIGHT = 10
@@ -55,33 +56,22 @@ QUALITY_LIMITS = {
     "dependency_transparency": 5,
 }
 
-AI_VALUE_LIMITS = {
+VALUE_LIMITS = {
     "problem_value": 20,
-    "baseline_improvement": 20,
-    "ai_necessity": 15,
+    "practical_improvement": 20,
+    "use_frequency": 15,
     "workflow_completeness": 15,
-    "model_substitutability": 10,
+    "interoperability": 10,
     "extensibility": 10,
     "compounding_value": 5,
     "cost_benefit": 5,
 }
 
-AI_LEVELS = {"L0", "L1", "L2", "L3", "L4"}
-LICENSE_RISK_TAGS = {
-    "LICENSE_MISSING",
-    "LICENSE_UNRECOGNIZED",
-    "NONCOMMERCIAL",
-    "COPYLEFT",
-    "MODEL_LICENSE_RESTRICTED",
-    "DATASET_RESTRICTION",
-    "OUTPUT_RIGHTS_UNCLEAR",
-    "DEPENDENCY_LICENSE_CONFLICT",
-    "ASSET_ATTRIBUTION_REQUIRED",
-}
+VALUE_LEVELS = {"P0", "P1", "P2", "P3", "P4"}
 
 CARD_FIELDS = {
     "one_line", "what", "audience", "usage", "features", "why",
-    "strengths", "limitations", "ai"
+    "strengths", "limitations", "value"
 }
 
 
@@ -182,8 +172,8 @@ def validate_page(page: dict[str, Any], capture_date: str) -> None:
 def validate_repository(repo: dict[str, Any]) -> None:
     required = {
         "full_name", "url", "description", "category", "created_at", "pushed_at",
-        "is_fork", "is_mirror", "archived", "language", "hard_filter", "license",
-        "quality", "ai_value", "card", "evidence_urls"
+        "is_fork", "is_mirror", "archived", "language", "hard_filter",
+        "quality", "value", "card", "evidence_urls"
     }
     if set(repo) != required:
         raise ValueError(f"repository keys mismatch for {repo.get('full_name')}")
@@ -198,42 +188,29 @@ def validate_repository(repo: dict[str, Any]) -> None:
     if any(not isinstance(repo["hard_filter"][key], bool) for key in COMMON_HARD_GATES):
         raise ValueError("hard_filter values must be boolean")
 
-    license_data = repo["license"]
-    license_keys = {
-        "code_license", "status", "research_allowed", "engineering_allowed",
-        "risk_tags", "evidence_urls"
-    }
-    if set(license_data) != license_keys:
-        raise ValueError("license keys mismatch")
-    if not isinstance(license_data["research_allowed"], bool) or not isinstance(license_data["engineering_allowed"], bool):
-        raise ValueError("license pass fields must be boolean")
-    unknown_risks = set(license_data["risk_tags"]) - LICENSE_RISK_TAGS
-    if unknown_risks:
-        raise ValueError(f"unknown license risk tags: {sorted(unknown_risks)}")
-
     quality = repo["quality"]
     q_total = component_total(quality["scores"], QUALITY_LIMITS, "quality.scores")
     if q_total != quality["total"] or not quality.get("rationale") or not quality.get("evidence_urls"):
         raise ValueError("quality evidence or total invalid")
 
-    ai_value = repo["ai_value"]
-    v_total = component_total(ai_value["scores"], AI_VALUE_LIMITS, "ai_value.scores")
-    if v_total != ai_value["total"] or ai_value.get("level") not in AI_LEVELS:
-        raise ValueError("AI value level or total invalid")
-    if not ai_value.get("rationale") or not ai_value.get("evidence_urls"):
-        raise ValueError("AI value needs rationale and evidence")
+    value = repo["value"]
+    v_total = component_total(value["scores"], VALUE_LIMITS, "value.scores")
+    if v_total != value["total"] or value.get("level") not in VALUE_LEVELS:
+        raise ValueError("project value level or total invalid")
+    if not value.get("rationale") or not value.get("evidence_urls"):
+        raise ValueError("project value needs rationale and evidence")
 
     card_data = repo["card"]
     if set(card_data) != CARD_FIELDS:
         raise ValueError("card fields mismatch")
-    for field in ("one_line", "what", "usage", "why", "ai"):
+    for field in ("one_line", "what", "usage", "why", "value"):
         if not isinstance(card_data[field], str) or not card_data[field].strip():
             raise ValueError(f"card.{field} must be non-empty text")
     for field in ("audience", "features", "strengths", "limitations"):
         if not isinstance(card_data[field], list) or not card_data[field] or not all(isinstance(value, str) and value.strip() for value in card_data[field]):
             raise ValueError(f"card.{field} must be a non-empty text list")
 
-    all_urls = repo["evidence_urls"] + quality["evidence_urls"] + ai_value["evidence_urls"] + license_data["evidence_urls"]
+    all_urls = repo["evidence_urls"] + quality["evidence_urls"] + value["evidence_urls"]
     if not all_urls or any(not isinstance(url, str) or not url.startswith("https://github.com/") for url in all_urls):
         raise ValueError("all evidence must use GitHub URLs")
 
@@ -370,35 +347,55 @@ def grade(score: float) -> str | None:
     return None
 
 
+def evaluation_value(evaluation: dict[str, Any]) -> dict[str, Any]:
+    """Return the v3 project-value block, with v2 compatibility for stored history."""
+    return evaluation.get("value") or evaluation["ai_value"]
+
+
+def primary_period(evaluation: dict[str, Any]) -> str:
+    """Assign one repository to its strongest observed Trending period."""
+    trend = evaluation["trend"]
+    present = set(trend.get("periods_present") or PERIOD_ORDER)
+    candidates = [period for period in PERIOD_ORDER if period in present]
+    if not candidates:
+        candidates = list(PERIOD_ORDER)
+    components = trend.get("components", {})
+    return max(
+        candidates,
+        key=lambda period: (
+            components.get(f"{period}_percentile", 50.0),
+            -PERIOD_ORDER.index(period),
+        ),
+    )
+
+
 def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) -> dict[str, Any]:
     common_pass, failures = hard_filter(repo)
-    research_pass = common_pass and repo["license"]["research_allowed"]
-    engineering_pass = common_pass and repo["license"]["engineering_allowed"]
     age_days = (capture_date - parse_datetime(repo["created_at"]).date()).days
     hot_type = "NEW_HOT" if age_days <= NEW_HOT_DAYS else "REVIVED_HOT"
 
     stage = None
     reasons: list[str] = []
-    if not research_pass:
+    if not common_pass:
         stage = "hard_filter"
-        reasons = failures + ([] if repo["license"]["research_allowed"] else ["research_license_not_allowed"])
+        reasons = failures
     elif not trend["pass"]:
         stage = "trend"
         reasons = [f"trend_score_below_{TREND_PASS:g}"]
     elif repo["quality"]["total"] < QUALITY_PASS:
         stage = "quality"
         reasons = [f"quality_score_below_{QUALITY_PASS}"]
-    elif repo["ai_value"]["total"] < AI_VALUE_PASS:
-        stage = "ai_value"
-        reasons = [f"ai_value_score_below_{AI_VALUE_PASS}"]
+    elif repo["value"]["total"] < VALUE_PASS:
+        stage = "value"
+        reasons = [f"value_score_below_{VALUE_PASS}"]
 
-    final_score = round(trend["score"] * 0.20 + repo["quality"]["total"] * 0.45 + repo["ai_value"]["total"] * 0.35, 2)
+    final_score = round(trend["score"] * 0.20 + repo["quality"]["total"] * 0.45 + repo["value"]["total"] * 0.35, 2)
     final_grade = grade(final_score)
     if stage is None and final_grade is None:
         stage = "final"
         reasons = [f"final_score_below_{FINAL_PASS:g}"]
 
-    evidence = sorted(set(repo["evidence_urls"] + repo["license"]["evidence_urls"] + repo["quality"]["evidence_urls"] + repo["ai_value"]["evidence_urls"]))
+    evidence = sorted(set(repo["evidence_urls"] + repo["quality"]["evidence_urls"] + repo["value"]["evidence_urls"]))
     return {
         "full_name": repo["full_name"],
         "url": repo["url"],
@@ -406,20 +403,17 @@ def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) ->
         "hot_type": hot_type,
         "repository_age_days": age_days,
         "hard_filter": {
-            "research": "PASS" if research_pass else "FAIL",
-            "engineering": "PASS" if engineering_pass else "FAIL",
+            "status": "PASS" if common_pass else "FAIL",
             "failures": failures,
         },
-        "license": repo["license"],
         "trend": trend,
         "quality": repo["quality"],
-        "ai_value": repo["ai_value"],
+        "value": repo["value"],
         "card": repo["card"],
         "final": {
             "score": final_score,
             "grade": final_grade,
             "status": "accepted" if stage is None else "rejected",
-            "engineering_eligible": engineering_pass and stage is None,
             "rejection_stage": stage,
             "rejection_reasons": reasons,
         },
@@ -436,6 +430,7 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
             continue
         name = evaluation["full_name"]
         entry = by_name.get(name, {})
+        value = evaluation_value(evaluation)
         entry.update(
             {
                 "full_name": name,
@@ -446,17 +441,17 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
                 "last_evaluated": capture_date.isoformat(),
                 "trend_score": evaluation["trend"]["score"],
                 "quality_score": evaluation["quality"]["total"],
-                "ai_value_score": evaluation["ai_value"]["total"],
-                "ai_level": evaluation["ai_value"]["level"],
+                "value_score": value["total"],
+                "value_level": value["level"],
+                "primary_period": primary_period(evaluation),
                 "final_score": evaluation["final"]["score"],
                 "grade": evaluation["final"]["grade"],
-                "research_gate": evaluation["hard_filter"]["research"],
-                "engineering_gate": evaluation["hard_filter"]["engineering"],
-                "license_risk_tags": evaluation["license"]["risk_tags"],
                 "one_line": evaluation["card"]["one_line"],
                 "card": f"repos/{name.replace('/', '__')}.md",
             }
         )
+        for legacy_key in ("ai_value_score", "ai_level", "research_gate", "engineering_gate", "license_risk_tags"):
+            entry.pop(legacy_key, None)
         by_name[name] = entry
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -475,6 +470,9 @@ def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], ca
         return
     periods = evaluation["trend"]["period_stars"]
     card_data = evaluation["card"]
+    value = evaluation_value(evaluation)
+    value_text = card_data.get("value") or card_data.get("ai", "")
+    period = primary_period(evaluation)
     bullets = lambda values: "\n".join(f"- {value}" for value in values)
     show = lambda value: value if value is not None else "未展示"
     text = f"""# {repo['full_name']}
@@ -511,21 +509,22 @@ def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], ca
 
 {bullets(card_data['limitations'])}
 
-## AI价值判断
+## 项目价值判断
 
-{card_data['ai']}
+{value_text}
 
 ## Trending表现与综合评分
 
 | 项目 | 数值 |
 |---|---:|
+| 主榜归属 | {PERIOD_LABELS[period]} |
 | 热度类型 | {evaluation['hot_type']} |
 | Today Stars | {show(periods['daily'])} |
 | Week Stars | {show(periods['weekly'])} |
 | Month Stars | {show(periods['monthly'])} |
 | 趋势 T | {evaluation['trend']['score']} |
 | 质量 Q | {evaluation['quality']['total']} |
-| AI价值 V | {evaluation['ai_value']['total']} |
+| 项目价值 V | {value['total']} |
 | 综合 F | {evaluation['final']['score']} |
 | 等级 | {evaluation['final']['grade']} |
 
@@ -538,47 +537,92 @@ def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], ca
 
 def render_index(root: Path, catalog: dict[str, Any]) -> None:
     lines = ["# GitHub Trending 项目索引", "", f"最后更新：{catalog['updated_at']}", ""]
-    for hot_type, title in (("NEW_HOT", "近期新项目"), ("REVIVED_HOT", "老项目重新走红")):
-        lines.extend([f"## {title}", ""])
-        entries = [entry for entry in catalog["entries"] if entry["hot_type"] == hot_type]
+    for period in PERIOD_ORDER:
+        lines.extend([f"## {PERIOD_LABELS[period]}", ""])
+        entries = [entry for entry in catalog["entries"] if entry.get("primary_period", "weekly") == period]
         if not entries:
             lines.append("暂无正式收录。")
         else:
-            lines.extend(["| 仓库 | 等级 | F | T | Q | V | 科研 | 工程 |", "|---|---:|---:|---:|---:|---:|---|---|"])
+            lines.extend(["| 仓库 | 等级 | F | T | Q | V |", "|---|---:|---:|---:|---:|---:|"])
             for entry in entries:
+                value_score = entry.get("value_score", entry.get("ai_value_score", 0))
                 lines.append(
                     f"| [{entry['full_name']}]({entry['card']}) | {entry['grade']} | {entry['final_score']} | "
-                    f"{entry['trend_score']} | {entry['quality_score']} | {entry['ai_value_score']} | "
-                    f"{entry['research_gate']} | {entry['engineering_gate']} |"
+                    f"{entry['trend_score']} | {entry['quality_score']} | {value_score} |"
                 )
         lines.append("")
     lines.append("候选范围为 GitHub Trending，不代表 GitHub 全站排名。")
     atomic_text(root / "index.md", "\n".join(lines) + "\n")
 
 
-def render_daily(root: Path, capture_date: date, pages: list[dict[str, Any]], evaluations: list[dict[str, Any]], raw_candidate_count: int) -> None:
+def select_period_features(
+    evaluations: list[dict[str, Any]],
+    catalog: dict[str, Any],
+    capture_date: date,
+    limit: int = PERIOD_FEATURE_LIMIT,
+) -> dict[str, list[dict[str, Any]]]:
+    """Select new, globally deduplicated projects for daily/weekly/monthly panels."""
+    first_accepted = {entry["full_name"]: entry.get("first_accepted") for entry in catalog.get("entries", [])}
+    accepted = sorted(
+        [
+            item
+            for item in evaluations
+            if item["final"]["status"] == "accepted"
+            and first_accepted.get(item["full_name"]) == capture_date.isoformat()
+        ],
+        key=lambda item: (-item["final"]["score"], item["full_name"].lower()),
+    )
+    groups = {period: [] for period in PERIOD_ORDER}
+    selected_names: set[str] = set()
+    for item in accepted:
+        name = item["full_name"]
+        if name in selected_names:
+            continue
+        period = primary_period(item)
+        if len(groups[period]) >= limit:
+            continue
+        groups[period].append(item)
+        selected_names.add(name)
+    return groups
+
+
+def render_daily(
+    root: Path,
+    capture_date: date,
+    pages: list[dict[str, Any]],
+    evaluations: list[dict[str, Any]],
+    raw_candidate_count: int,
+    catalog: dict[str, Any],
+) -> None:
     accepted = sorted([e for e in evaluations if e["final"]["status"] == "accepted"], key=lambda e: -e["final"]["score"])
+    featured = select_period_features(evaluations, catalog, capture_date)
+    first_accepted = {entry["full_name"]: entry.get("first_accepted") for entry in catalog.get("entries", [])}
+    newly_accepted = [e for e in accepted if first_accepted.get(e["full_name"]) == capture_date.isoformat()]
     rejected = [e for e in evaluations if e["final"]["status"] == "rejected"]
-    success_pages = sum(page["status"] == "success" for page in pages)
     lines = [
-        f"# GitHub Trending AI日报｜{capture_date.isoformat()}",
+        f"# GitHub Trending 项目日报｜{capture_date.isoformat()}",
         "",
         "## 今日概览",
         "",
         f"- Trending页面：{len(pages)}",
         f"- Trending去重项目：{raw_candidate_count}",
-        f"- AI主题候选：{len(evaluations)}",
-        f"- 正式收录：{len(accepted)}",
+        f"- 评估候选：{len(evaluations)}",
+        f"- 通过筛选：{len(accepted)}",
+        f"- 新增收录：{len(newly_accepted)}",
+        f"- 累计项目：{catalog.get('entry_count', len(catalog.get('entries', [])))}",
         "",
     ]
-    for hot_type, title in (("NEW_HOT", "NEW_HOT｜近期新项目"), ("REVIVED_HOT", "REVIVED_HOT｜重新走红项目")):
-        chosen = [e for e in accepted if e["hot_type"] == hot_type]
-        lines.extend([f"## {title}", ""])
+    for period in PERIOD_ORDER:
+        chosen = featured[period]
+        lines.extend([f"## {PERIOD_LABELS[period]}精选", ""])
+        if not chosen:
+            lines.extend(["暂无新增项目。", ""])
         for e in chosen:
-            week = e["trend"]["period_stars"]["weekly"]
+            period_stars = e["trend"]["period_stars"][period]
+            value = evaluation_value(e)
             lines.extend([
                 f"### {e['full_name']}", "", e["card"]["one_line"], "",
-                f"`{e['final']['grade']}` · T {e['trend']['score']} · Q {e['quality']['total']} · V {e['ai_value']['total']} · F {e['final']['score']} · 周榜Stars {week if week is not None else '未展示'}",
+                f"`{e['final']['grade']}` · T {e['trend']['score']} · Q {e['quality']['total']} · V {value['total']} · F {e['final']['score']} · {PERIOD_LABELS[period]}Stars {period_stars if period_stars is not None else '未展示'}",
                 "", f"[查看详细介绍](../repos/{e['full_name'].replace('/', '__')}.md)", ""
             ])
         lines.append("")
@@ -613,12 +657,22 @@ def ingest(root: Path, input_path: Path) -> dict[str, Any]:
         validate_repository(repo)
 
     consolidated = consolidate_pages(pages)
-    topic_filter = payload.get("topic_filter")
-    if not isinstance(topic_filter, dict) or not topic_filter.get("description"):
-        raise ValueError("topic_filter description is required")
+    candidate_pool = payload.get("candidate_pool")
+    if not isinstance(candidate_pool, dict) or not candidate_pool.get("description"):
+        raise ValueError("candidate_pool description is required")
+    if candidate_pool.get("dedupe_key") != "full_name":
+        raise ValueError("candidate_pool dedupe_key must be full_name")
+    if candidate_pool.get("raw_candidate_count") != len(consolidated):
+        raise ValueError("candidate_pool raw count mismatch")
+    if candidate_pool.get("evaluated_candidate_count") != len(names):
+        raise ValueError("candidate_pool evaluated count mismatch")
+    missing_enrichment = sorted(set(consolidated) - set(names))
     not_in_trending = sorted(set(names) - set(consolidated))
-    if not_in_trending:
-        raise ValueError(f"enriched repositories absent from Trending: {not_in_trending}")
+    if missing_enrichment or not_in_trending:
+        raise ValueError(
+            f"candidate pool must evaluate every deduplicated Trending repository; "
+            f"missing={missing_enrichment} extra={not_in_trending}"
+        )
 
     raw_dir = root / "trending" / "raw" / capture_date.isoformat()
     for page in pages:
@@ -630,8 +684,8 @@ def ingest(root: Path, input_path: Path) -> dict[str, Any]:
         "candidate_source": "GitHub Trending",
         "page_count": len(pages),
         "raw_repository_count": len(consolidated),
-        "selected_repository_count": len(names),
-        "topic_filter": topic_filter,
+        "evaluated_repository_count": len(names),
+        "candidate_pool": candidate_pool,
         "repositories": sorted(consolidated.values(), key=lambda item: item["full_name"].lower()),
     }
     atomic_json(root / "trending" / "snapshots" / f"{capture_date.isoformat()}.json", snapshot)
@@ -647,13 +701,19 @@ def ingest(root: Path, input_path: Path) -> dict[str, Any]:
     for evaluation in evaluations:
         render_card(root, repo_by_name[evaluation["full_name"]], evaluation, capture_date)
     render_index(root, catalog)
-    render_daily(root, capture_date, pages, evaluations, len(consolidated))
+    render_daily(root, capture_date, pages, evaluations, len(consolidated), catalog)
+    first_accepted = {entry["full_name"]: entry.get("first_accepted") for entry in catalog.get("entries", [])}
+    newly_accepted = sum(
+        e["final"]["status"] == "accepted" and first_accepted.get(e["full_name"]) == capture_date.isoformat()
+        for e in evaluations
+    )
     return {
         "capture_date": capture_date.isoformat(),
         "pages": len(pages),
         "raw_candidates": len(consolidated),
         "candidates": len(evaluations),
         "accepted": sum(e["final"]["status"] == "accepted" for e in evaluations),
+        "newly_accepted": newly_accepted,
         "rejected": sum(e["final"]["status"] == "rejected" for e in evaluations),
     }
 

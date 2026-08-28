@@ -43,7 +43,7 @@ class EmptySiteTests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             self.assertIn("SITE PASS project_pages=0 daily_pages=0", build.stdout)
             home = (root / "site" / "index.html").read_text(encoding="utf-8")
-            self.assertIn("尚未执行首次采集", home)
+            self.assertIn("暂无新增项目", home)
 
             validate = subprocess.run(
                 [sys.executable, str(REPO_ROOT / "scripts" / "validate_site.py"), "--root", str(root)],

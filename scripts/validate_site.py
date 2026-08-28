@@ -17,7 +17,7 @@ REQUIRED_PROJECT_HEADINGS = [
     "## 为什么值得关注",
     "## 主要优点",
     "## 明确不足",
-    "## AI价值判断",
+    "## 项目价值判断",
     "## Trending表现与综合评分",
     "## 项目链接",
 ]
@@ -67,10 +67,18 @@ def main() -> None:
     daily_mds = sorted((root / "daily").glob("*.md"))
     for daily_path in daily_mds:
         daily = daily_path.read_text(encoding="utf-8")
-        for phrase in ("淘汰项目与原因", "数据缺口", "判断边界", "今日一句话结论"):
+        for phrase in (
+            "淘汰项目与原因",
+            "数据缺口",
+            "判断边界",
+            "今日一句话结论",
+            "AI主题候选",
+            "NEW_HOT｜近期新项目",
+            "REVIVED_HOT｜重新走红项目",
+        ):
             if phrase in daily:
                 raise SystemExit(f"FAIL {daily_path.name} contains forbidden phrase: {phrase}")
-        for name in ("NEW_HOT｜近期新项目", "REVIVED_HOT｜重新走红项目"):
+        for name in ("日榜精选", "周榜精选", "月榜精选"):
             if name not in daily:
                 raise SystemExit(f"FAIL {daily_path.name} missing section: {name}")
 

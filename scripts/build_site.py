@@ -8,6 +8,8 @@ import re
 from datetime import date
 from pathlib import Path
 
+from trending_engine import PERIOD_LABELS, PERIOD_ORDER, evaluation_value, select_period_features
+
 
 STYLE = r"""
 :root {
@@ -18,8 +20,9 @@ STYLE = r"""
   --muted: #62676d;
   --line: #d9dddf;
   --accent: #176b5b;
-  --new: #a54d18;
-  --revived: #3a5a98;
+  --daily: #a54d18;
+  --weekly: #176b5b;
+  --monthly: #3a5a98;
   --code: #eef1ef;
   --shadow: 0 1px 2px rgba(20, 24, 28, 0.04);
 }
@@ -31,8 +34,9 @@ STYLE = r"""
     --muted: #aab0b5;
     --line: #30363b;
     --accent: #70c7b2;
-    --new: #f0a36f;
-    --revived: #9eb7f2;
+    --daily: #f0a36f;
+    --weekly: #70c7b2;
+    --monthly: #9eb7f2;
     --code: #23272a;
     --shadow: none;
   }
@@ -76,8 +80,9 @@ h3 { font-size: 19px; margin: 0; }
 .card-top { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .repo { font: 700 17px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
 .badge { border: 1px solid var(--line); padding: 2px 8px; font: 700 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
-.badge.new { color: var(--new); border-color: color-mix(in srgb, var(--new) 45%, var(--line)); }
-.badge.revived { color: var(--revived); border-color: color-mix(in srgb, var(--revived) 45%, var(--line)); }
+.badge.daily { color: var(--daily); border-color: color-mix(in srgb, var(--daily) 45%, var(--line)); }
+.badge.weekly { color: var(--weekly); border-color: color-mix(in srgb, var(--weekly) 45%, var(--line)); }
+.badge.monthly { color: var(--monthly); border-color: color-mix(in srgb, var(--monthly) 45%, var(--line)); }
 .summary { color: var(--muted); margin: 18px 0; flex: 1; }
 .scoreline { display: flex; flex-wrap: wrap; gap: 9px 13px; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .scoreline span { color: var(--muted); }
@@ -188,7 +193,7 @@ def page(title: str, body: str, latest_date: str | None, prefix: str = "") -> st
 </head>
 <body>
   <header class="topbar"><nav class="shell nav">
-    <a class="brand" href="{prefix}index.html">GitHub Trending AI</a>
+    <a class="brand" href="{prefix}index.html">GitHub Trending</a>
     <div class="navlinks"><a href="{prefix}index.html">首页</a>{latest_link}<a href="{prefix}../index.md">Markdown Wiki</a><a href="https://github.com/trending?since=weekly">数据源</a></div>
   </nav></header>
   {body}
@@ -196,16 +201,48 @@ def page(title: str, body: str, latest_date: str | None, prefix: str = "") -> st
 </body></html>"""
 
 
-def card(entry: dict, one_line: str, link: str) -> str:
-    hot = entry["hot_type"]
-    css = "new" if hot == "NEW_HOT" else "revived"
-    label = "NEW_HOT" if hot == "NEW_HOT" else "REVIVED_HOT"
+def card(entry: dict, one_line: str, link: str, period: str) -> str:
+    label = PERIOD_LABELS[period]
     return f"""<article class="card">
-  <div class="card-top"><h3 class="repo">{html.escape(entry['full_name'])}</h3><span class="badge {css}">{label}</span></div>
+  <div class="card-top"><h3 class="repo">{html.escape(entry['full_name'])}</h3><span class="badge {period}">{label}</span></div>
   <p class="summary">{html.escape(one_line)}</p>
-  <div class="scoreline"><strong>等级 {entry['grade']}</strong><span>T {entry['trend_score']}</span><span>Q {entry['quality_score']}</span><span>V {entry['ai_value_score']}</span><span>F {entry['final_score']}</span></div>
+  <div class="scoreline"><strong>等级 {entry['grade']}</strong><span>T {entry['trend_score']}</span><span>Q {entry['quality_score']}</span><span>V {entry['value_score']}</span><span>F {entry['final_score']}</span></div>
   <a class="card-link" href="{html.escape(link, quote=True)}">查看详细介绍 →</a>
 </article>"""
+
+
+def normalized_entry(item: dict) -> dict:
+    value = evaluation_value(item)
+    return {
+        "full_name": item["full_name"],
+        "grade": item["final"]["grade"],
+        "trend_score": item["trend"]["score"],
+        "quality_score": item["quality"]["total"],
+        "value_score": value["total"],
+        "final_score": item["final"]["score"],
+    }
+
+
+def period_sections(featured: dict[str, list[dict]], one_line: dict[str, str], link_prefix: str) -> str:
+    groups = []
+    notes = {"daily": "短期突然升温", "weekly": "一周持续增长", "monthly": "月度稳定关注"}
+    for period in PERIOD_ORDER:
+        items = []
+        for item in featured[period]:
+            name = item["full_name"]
+            items.append(
+                card(
+                    normalized_entry(item),
+                    one_line[name],
+                    f"{link_prefix}{name.replace('/', '__')}.html",
+                    period,
+                )
+            )
+        groups.append(
+            f'<section><div class="section-head"><h2>{PERIOD_LABELS[period]}精选</h2><p>{notes[period]}</p></div>'
+            f'<div class="grid">{"".join(items) or "<div class=empty>暂无新增项目</div>"}</div></section>'
+        )
+    return "".join(groups)
 
 
 def main() -> None:
@@ -239,62 +276,48 @@ def main() -> None:
 
     latest_stats_html = '<div class="stats">' + "".join(
         f'<div class="stat"><strong>0</strong><span>{label}</span></div>'
-        for label in ("Trending页面", "去重候选", "AI主题", "正式收录")
+        for label in ("Trending页面", "去重候选", "通过筛选", "新增展示")
     ) + "</div>"
+    latest_period_sections = period_sections({period: [] for period in PERIOD_ORDER}, one_line, "repos/")
     for daily_path in daily_files:
         report_date = daily_path.stem
         incoming = json.loads((root / f"incoming/{report_date}.json").read_text(encoding="utf-8"))
         evaluation = json.loads((root / f"evaluations/{report_date}.json").read_text(encoding="utf-8"))
         accepted_eval = [item for item in evaluation["entries"] if item["final"]["status"] == "accepted"]
+        featured = select_period_features(evaluation["entries"], catalog, date.fromisoformat(report_date))
+        new_count = sum(len(items) for items in featured.values())
+        pool = incoming.get("candidate_pool") or incoming.get("topic_filter") or {}
         stats = [
             (str(len(incoming["pages"])), "Trending页面"),
-            (str(incoming["topic_filter"]["raw_candidate_count"]), "去重候选"),
-            (str(incoming["topic_filter"]["selected_candidate_count"]), "AI主题"),
-            (str(len(accepted_eval)), "正式收录"),
+            (str(pool.get("raw_candidate_count", len(evaluation["entries"]))), "去重候选"),
+            (str(len(accepted_eval)), "通过筛选"),
+            (str(new_count), "新增展示"),
         ]
         stats_html = "<div class=\"stats\">" + "".join(f'<div class="stat"><strong>{value}</strong><span>{label}</span></div>' for value, label in stats) + "</div>"
         if report_date == latest_date:
             latest_stats_html = stats_html
-        groups = []
-        for hot_type, title, note in (("NEW_HOT", "近期新项目", "创建不超过90天"), ("REVIVED_HOT", "重新走红项目", "成熟项目再次进入趋势")):
-            items = []
-            for evaluation_item in sorted([item for item in accepted_eval if item["hot_type"] == hot_type], key=lambda item: -item["final"]["score"]):
-                name = evaluation_item["full_name"]
-                normalized = {
-                    "full_name": name,
-                    "hot_type": hot_type,
-                    "grade": evaluation_item["final"]["grade"],
-                    "trend_score": evaluation_item["trend"]["score"],
-                    "quality_score": evaluation_item["quality"]["total"],
-                    "ai_value_score": evaluation_item["ai_value"]["total"],
-                    "final_score": evaluation_item["final"]["score"],
-                }
-                items.append(card(normalized, one_line[name], f"../repos/{name.replace('/', '__')}.html"))
-            groups.append(f'<section><div class="section-head"><h2>{title}</h2><p>{note}</p></div><div class="grid">{"".join(items) or "<div class=empty>暂无项目</div>"}</div></section>')
+            latest_period_sections = period_sections(featured, one_line, "repos/")
+        groups = period_sections(featured, one_line, "../repos/")
         daily_body = f"""<main><div class="shell">
           <div class="eyebrow">Daily Brief · {report_date}</div>
-          <h1>GitHub Trending AI日报</h1>
-          <p class="lede">从完整Trending页面中筛出值得进一步了解的AI与开发者工具项目。点击项目卡片进入详细介绍。</p>
-          {stats_html}{''.join(groups)}
+          <h1>GitHub Trending 项目日报</h1>
+          <p class="lede">从完整Trending页面中筛出值得进一步了解的项目；同一仓库只收录一次，并按最强趋势归入日榜、周榜或月榜。</p>
+          {stats_html}{groups}
         </div></main>"""
-        (site / "daily" / f"{report_date}.html").write_text(page(f"GitHub Trending AI日报｜{report_date}", daily_body, latest_date, "../"), encoding="utf-8")
+        (site / "daily" / f"{report_date}.html").write_text(page(f"GitHub Trending 项目日报｜{report_date}", daily_body, latest_date, "../"), encoding="utf-8")
 
-    top_entries = catalog["entries"][:8]
-    latest_cards = "".join(card(entry, one_line[entry["full_name"]], f"repos/{entry['full_name'].replace('/', '__')}.html") for entry in top_entries)
-    if not latest_cards:
-        latest_cards = '<div class="empty">尚未执行首次采集。每日任务完成后，精选项目会出现在这里。</div>'
     history = "".join(f'<li><a href="daily/{path.stem}.html">{path.stem}</a><span>查看日报</span></li>' for path in daily_files)
     if not history:
         history = '<li><span>尚未生成日报</span><span>等待首次采集</span></li>'
     home_body = f"""<main><div class="shell">
       <div class="eyebrow">Local Knowledge Base</div>
-      <h1>GitHub Trending AI知识库</h1>
-      <p class="lede">每天从GitHub Trending发现正在获得关注的AI项目，用固定规则筛选，再以Markdown Wiki和离线HTML长期保存。</p>
+      <h1>GitHub Trending 项目知识库</h1>
+      <p class="lede">每天从GitHub Trending发现正在获得关注的项目，不做主题预筛选；同一仓库只收录一次，并分别呈现日榜、周榜和月榜。</p>
       {latest_stats_html}
-      <section><div class="section-head"><h2>最新精选</h2><p>按综合评分排序</p></div><div class="grid">{latest_cards}</div></section>
+      {latest_period_sections}
       <section><div class="section-head"><h2>历史日报</h2><p>按日期倒序</p></div><ul class="history">{history}</ul></section>
     </div></main>"""
-    (site / "index.html").write_text(page("GitHub Trending AI知识库", home_body, latest_date), encoding="utf-8")
+    (site / "index.html").write_text(page("GitHub Trending 项目知识库", home_body, latest_date), encoding="utf-8")
     print(f"SITE PASS project_pages={len(catalog['entries'])} daily_pages={len(daily_files)}")
 
 

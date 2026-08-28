@@ -3,19 +3,21 @@
   "$id": "https://local.github-trending-radar/schemas/incoming.schema.json",
   "title": "GitHub Trending Daily Evidence Batch",
   "type": "object",
-  "required": ["schema_version", "capture_date", "captured_at", "topic_filter", "pages", "repositories"],
+  "required": ["schema_version", "capture_date", "captured_at", "candidate_pool", "pages", "repositories"],
   "properties": {
-    "schema_version": { "const": 2 },
+    "schema_version": { "const": 3 },
     "capture_date": { "type": "string", "format": "date" },
     "captured_at": { "type": "string", "format": "date-time" },
-    "topic_filter": {
+    "candidate_pool": {
       "type": "object",
-      "required": ["description", "raw_candidate_count", "selected_candidate_count"],
+      "required": ["description", "dedupe_key", "raw_candidate_count", "evaluated_candidate_count"],
       "properties": {
-        "description": { "type": "string" },
+        "description": { "type": "string", "minLength": 1 },
+        "dedupe_key": { "const": "full_name" },
         "raw_candidate_count": { "type": "integer", "minimum": 1 },
-        "selected_candidate_count": { "type": "integer", "minimum": 1 }
-      }
+        "evaluated_candidate_count": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
     },
     "pages": {
       "type": "array",
@@ -41,10 +43,7 @@
         "captured_at": { "type": "string", "format": "date-time" },
         "raw_sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
         "status": { "enum": ["success", "failed"] },
-        "entries": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/trending_entry" }
-        }
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/trending_entry" } }
       },
       "additionalProperties": false
     },
@@ -66,7 +65,7 @@
     },
     "repository": {
       "type": "object",
-      "required": ["full_name", "url", "description", "category", "created_at", "pushed_at", "is_fork", "is_mirror", "archived", "language", "hard_filter", "license", "quality", "ai_value", "card", "evidence_urls"],
+      "required": ["full_name", "url", "description", "category", "created_at", "pushed_at", "is_fork", "is_mirror", "archived", "language", "hard_filter", "quality", "value", "card", "evidence_urls"],
       "properties": {
         "full_name": { "type": "string" },
         "url": { "type": "string", "format": "uri" },
@@ -79,12 +78,11 @@
         "archived": { "type": "boolean" },
         "language": { "type": ["string", "null"] },
         "hard_filter": { "type": "object" },
-        "license": { "type": "object" },
         "quality": { "type": "object" },
-        "ai_value": { "type": "object" },
+        "value": { "type": "object" },
         "card": {
           "type": "object",
-          "required": ["one_line", "what", "audience", "usage", "features", "why", "strengths", "limitations", "ai"],
+          "required": ["one_line", "what", "audience", "usage", "features", "why", "strengths", "limitations", "value"],
           "properties": {
             "one_line": { "type": "string", "minLength": 1 },
             "what": { "type": "string", "minLength": 1 },
@@ -94,11 +92,13 @@
             "why": { "type": "string", "minLength": 1 },
             "strengths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
             "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-            "ai": { "type": "string", "minLength": 1 }
-          }
+            "value": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
         },
         "evidence_urls": { "type": "array", "items": { "type": "string", "format": "uri" } }
-      }
+      },
+      "additionalProperties": false
     }
   }
 }
