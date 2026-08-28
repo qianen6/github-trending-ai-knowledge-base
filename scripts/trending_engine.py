@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 TREND_PASS = 40.0
 QUALITY_PASS = 60
 VALUE_PASS = 60
@@ -172,7 +172,7 @@ def validate_page(page: dict[str, Any], capture_date: str) -> None:
 def validate_repository(repo: dict[str, Any]) -> None:
     required = {
         "full_name", "url", "description", "category", "created_at", "pushed_at",
-        "is_fork", "is_mirror", "archived", "language", "hard_filter",
+        "is_fork", "is_mirror", "archived", "language", "hard_filter", "license",
         "quality", "value", "card", "evidence_urls"
     }
     if set(repo) != required:
@@ -187,6 +187,16 @@ def validate_repository(repo: dict[str, Any]) -> None:
         raise ValueError("hard_filter keys mismatch")
     if any(not isinstance(repo["hard_filter"][key], bool) for key in COMMON_HARD_GATES):
         raise ValueError("hard_filter values must be boolean")
+
+    license_data = repo["license"]
+    if set(license_data) != {"name", "scope_zh", "evidence_urls"}:
+        raise ValueError("license keys mismatch")
+    if not isinstance(license_data["name"], str) or not license_data["name"].strip():
+        raise ValueError("license.name must be non-empty text")
+    if not isinstance(license_data["scope_zh"], str) or not re.search(r"[\u4e00-\u9fff]", license_data["scope_zh"]):
+        raise ValueError("license.scope_zh must be a Chinese explanation")
+    if not isinstance(license_data["evidence_urls"], list):
+        raise ValueError("license.evidence_urls must be an array")
 
     quality = repo["quality"]
     q_total = component_total(quality["scores"], QUALITY_LIMITS, "quality.scores")
@@ -210,7 +220,7 @@ def validate_repository(repo: dict[str, Any]) -> None:
         if not isinstance(card_data[field], list) or not card_data[field] or not all(isinstance(value, str) and value.strip() for value in card_data[field]):
             raise ValueError(f"card.{field} must be a non-empty text list")
 
-    all_urls = repo["evidence_urls"] + quality["evidence_urls"] + value["evidence_urls"]
+    all_urls = repo["evidence_urls"] + license_data["evidence_urls"] + quality["evidence_urls"] + value["evidence_urls"]
     if not all_urls or any(not isinstance(url, str) or not url.startswith("https://github.com/") for url in all_urls):
         raise ValueError("all evidence must use GitHub URLs")
 
@@ -395,7 +405,7 @@ def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) ->
         stage = "final"
         reasons = [f"final_score_below_{FINAL_PASS:g}"]
 
-    evidence = sorted(set(repo["evidence_urls"] + repo["quality"]["evidence_urls"] + repo["value"]["evidence_urls"]))
+    evidence = sorted(set(repo["evidence_urls"] + repo["license"]["evidence_urls"] + repo["quality"]["evidence_urls"] + repo["value"]["evidence_urls"]))
     return {
         "full_name": repo["full_name"],
         "url": repo["url"],
@@ -406,6 +416,7 @@ def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) ->
             "status": "PASS" if common_pass else "FAIL",
             "failures": failures,
         },
+        "license": repo["license"],
         "trend": trend,
         "quality": repo["quality"],
         "value": repo["value"],
@@ -444,6 +455,8 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
                 "value_score": value["total"],
                 "value_level": value["level"],
                 "primary_period": primary_period(evaluation),
+                "license_name": evaluation["license"]["name"],
+                "license_scope_zh": evaluation["license"]["scope_zh"],
                 "final_score": evaluation["final"]["score"],
                 "grade": evaluation["final"]["grade"],
                 "one_line": evaluation["card"]["one_line"],
@@ -508,6 +521,10 @@ def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], ca
 ## 明确不足
 
 {bullets(card_data['limitations'])}
+
+## License作用域
+
+**{evaluation['license']['name']}**：{evaluation['license']['scope_zh']}
 
 ## 项目价值判断
 

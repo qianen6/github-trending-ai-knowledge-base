@@ -68,6 +68,11 @@ def repo(full_name: str, created_at: str) -> dict:
         "archived": False,
         "language": "Python",
         "hard_filter": {key: True for key in engine.COMMON_HARD_GATES},
+        "license": {
+            "name": "MIT",
+            "scope_zh": "适用于仓库源代码，允许使用、修改、分发和商业使用，但需保留版权与许可证声明。",
+            "evidence_urls": [url + "/blob/main/LICENSE"],
+        },
         "quality": quality,
         "value": value,
         "card": {
@@ -189,7 +194,7 @@ class TrendingEngineTests(unittest.TestCase):
                 json.dumps({"schema_version": 3, "updated_at": "2026-08-27", "entries": []}), encoding="utf-8"
             )
             payload = {
-                "schema_version": 3,
+                "schema_version": 4,
                 "capture_date": "2026-08-27",
                 "captured_at": "2026-08-27T09:00:00+08:00",
                 "candidate_pool": {
@@ -214,14 +219,15 @@ class TrendingEngineTests(unittest.TestCase):
             self.assertEqual(by_name["example/new-hot"]["hot_type"], "NEW_HOT")
             self.assertEqual(by_name["example/revived-hot"]["hot_type"], "REVIVED_HOT")
             self.assertEqual(by_name["example/revived-hot"]["hard_filter"]["status"], "PASS")
-            self.assertNotIn("license", by_name["example/revived-hot"])
+            self.assertEqual(by_name["example/revived-hot"]["license"]["name"], "MIT")
+            self.assertNotIn("engineering", by_name["example/revived-hot"]["hard_filter"])
             self.assertIn("value", by_name["example/revived-hot"])
 
     def test_every_deduplicated_trending_repo_must_be_evaluated(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             payload = {
-                "schema_version": 3,
+                "schema_version": 4,
                 "capture_date": "2026-08-27",
                 "captured_at": "2026-08-27T09:00:00+08:00",
                 "candidate_pool": {
@@ -242,7 +248,7 @@ class TrendingEngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             payload = {
-                "schema_version": 3,
+                "schema_version": 4,
                 "capture_date": "2026-08-27",
                 "captured_at": "2026-08-27T09:00:00+08:00",
                 "candidate_pool": {
@@ -273,6 +279,34 @@ class TrendingEngineTests(unittest.TestCase):
         candidate["value"]["scores"]["cost_benefit"] = 6
         with self.assertRaises(ValueError):
             engine.validate_repository(candidate)
+
+    def test_license_scope_is_chinese_description_not_a_gate(self) -> None:
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["license"] = {
+            "name": "未声明",
+            "scope_zh": "仓库没有声明统一许可证，因此这里只记录其公开可见范围，不据此改变项目评分。",
+            "evidence_urls": [],
+        }
+        engine.validate_repository(candidate)
+        trend = {
+            "score": 80.0,
+            "pass": True,
+            "components": {
+                "daily_percentile": 80.0,
+                "weekly_percentile": 80.0,
+                "monthly_percentile": 80.0,
+                "rank_momentum": 50.0,
+                "cross_period": 100.0,
+            },
+            "period_stars": {"daily": 100, "weekly": 500, "monthly": 900},
+            "appearance_count": 3,
+            "periods_present": ["daily", "weekly", "monthly"],
+            "average_rank": 1.0,
+            "previous_average_rank": None,
+        }
+        evaluated = engine.evaluate(candidate, trend, date.fromisoformat("2026-08-27"))
+        self.assertEqual(evaluated["final"]["status"], "accepted")
+        self.assertEqual(evaluated["license"]["name"], "未声明")
 
 
 if __name__ == "__main__":

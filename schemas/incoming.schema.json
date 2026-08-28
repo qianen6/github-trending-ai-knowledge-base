@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "capture_date", "captured_at", "candidate_pool", "pages", "repositories"],
   "properties": {
-    "schema_version": { "const": 3 },
+    "schema_version": { "const": 4 },
     "capture_date": { "type": "string", "format": "date" },
     "captured_at": { "type": "string", "format": "date-time" },
     "candidate_pool": {
@@ -65,7 +65,7 @@
     },
     "repository": {
       "type": "object",
-      "required": ["full_name", "url", "description", "category", "created_at", "pushed_at", "is_fork", "is_mirror", "archived", "language", "hard_filter", "quality", "value", "card", "evidence_urls"],
+      "required": ["full_name", "url", "description", "category", "created_at", "pushed_at", "is_fork", "is_mirror", "archived", "language", "hard_filter", "license", "quality", "value", "card", "evidence_urls"],
       "properties": {
         "full_name": { "type": "string" },
         "url": { "type": "string", "format": "uri" },
@@ -78,6 +78,16 @@
         "archived": { "type": "boolean" },
         "language": { "type": ["string", "null"] },
         "hard_filter": { "type": "object" },
+        "license": {
+          "type": "object",
+          "required": ["name", "scope_zh", "evidence_urls"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "scope_zh": { "type": "string", "minLength": 1 },
+            "evidence_urls": { "type": "array", "items": { "type": "string", "format": "uri" } }
+          },
+          "additionalProperties": false
+        },
         "quality": { "type": "object" },
         "value": { "type": "object" },
         "card": {

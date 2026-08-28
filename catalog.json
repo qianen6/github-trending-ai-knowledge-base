@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "updated_at": null,
   "candidate_source": "GitHub Trending",
   "dedupe_key": "full_name",
