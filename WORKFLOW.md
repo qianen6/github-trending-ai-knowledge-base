@@ -12,10 +12,13 @@
 
 每页保留URL、采集时间、状态、SHA-256、原始排名、仓库信息、周期Stars和Built by。GitHub未公开完整Trending算法，因此所有输出均称为Trending候选池，不称为全站排名。
 
+新安装把运行数据放在 `workspace/`；已有仓库若没有 `workspace/.kb-workspace` 标记，则继续读取根目录旧布局。所有脚本通过 `WorkspaceLayout` 解析同一个活动工作区。
+
 ## 每日执行
 
 ```text
-采集21个页面并保存原始HTML
+collect_trending通过固定矩阵采集21个页面并保存原始HTML、SHA-256、缓存与失败记录
+→ 可选读取GitHub API并保存README、License、根代码树等证据索引
 → 生成页面级规范化JSON
 → 按full_name合并全部appearances
 → 读取catalog，复用已收录项目的稳定证据
@@ -26,11 +29,13 @@
 → validate-cards执行逐仓库中文语义检查与批次反模板检查
 → 通过后原子写入schema_version=4的incoming正式批次
 → ingest计算H/T/Q/V/F并更新长期目录
+→ 生成结构化daily/YYYY-MM-DD.json（DailyEdition），固定日/周/月榜与前端展示并集
+→ 在.kb-state/staging暂存整次运行，整体验证后提交；失败恢复旧文件
 → 计算前端日榜、周榜、月榜项目并集，仅为这些项目获取官方README
 → 中文README原样复制；英文README按原文顺序完整翻译为中文
 → 写入readmes/manifest.json与readmes/owner__repo.zh-CN.md
 → readme_translations validate校验数量、来源哈希、译文哈希与中文正文
-→ build_site生成Markdown对应的离线HTML
+→ build_site从DailyEdition生成Markdown对应的离线HTML
 → engine/site/unit tests校验
 ```
 
@@ -50,14 +55,21 @@ README、依赖、入口、测试和 CI 证据只进入 `quality.rationale` 与 
 
 复用已收录项目的稳定证据不等于复用旧卡片套话；每次生成 `incoming` 时都必须重新检查 `card` 字段。旧卡片若仍把仓库核验证据写成功能或优点，必须先按项目 README 的真实能力重写，不能直接复制到新批次。确定性脚本不得根据编程语言、类别、目录结构、测试或 CI 自动拼接功能和优点。
 
+采集实现位于 `src/github_trending_kb/collector.py`。远程GitHub与保存的HTML夹具是两个Adapter；页面解析、缓存、重试、限流响应和哈希验证集中在同一Module。语义卡片仍由Codex依据证据逐项目撰写。
+
+采集命令只有在21页和所请求证据均成功时输出 `COLLECT PASS`；存在失败时输出 `COLLECT PARTIAL` 并返回非零状态。重跑会复用已保存HTML和稳定证据，只补失败部分。
+
 整个批次必须同时满足：每个字段通过中文与禁用套话检查；不同仓库不得复用完全相同的 `features` 或 `strengths`；功能与优点各至少两条。任一仓库失败时，整批停留在运行目录的草稿状态，不得覆盖正式 `incoming`、目录或站点。
 
 ## 执行命令
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts/trending_engine.py validate-cards --root . --input proof/run-YYYY-MM-DD/incoming.candidate.json
-python scripts/trending_engine.py ingest --root . --input incoming/YYYY-MM-DD.json
+python -m pip install --no-deps -e .
+$dataRoot = if (Test-Path workspace/.kb-workspace) { "workspace" } else { "." }
+python scripts/collect_trending.py --root . --date YYYY-MM-DD --evidence
+python scripts/trending_engine.py validate-cards --root . --input "$dataRoot/proof/run-YYYY-MM-DD/incoming.candidate.json"
+python scripts/trending_engine.py ingest --root . --input "$dataRoot/incoming/YYYY-MM-DD.json"
 python scripts/readme_translations.py validate --root .
 python scripts/build_site.py --root .
 python scripts/trending_engine.py validate --root .
@@ -68,13 +80,15 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 产物链
 
 ```text
-trending/html + trending/raw
+trending/html + trending/evidence + proof/run-YYYY-MM-DD/collection.json
 → trending/snapshots
 → proof/run-YYYY-MM-DD/incoming.candidate.json
 → validate-cards
 → incoming
 → evaluations + rejections
 → catalog + repos + daily
+→ daily/YYYY-MM-DD.json DailyEdition
+→ .kb-state/commits/YYYY-MM-DD.json publication manifest
 → readmes/manifest.json + readmes/*.zh-CN.md
 → readme_translations validate
 → site
@@ -91,5 +105,6 @@ trending/html + trending/raw
 7. 所有前端榜单项目都有来源哈希匹配的中文README，并在详情页内完整显示；未展示项目不要求汉化。
 8. Markdown与HTML链接完整。
 9. ingest、README validator、build、两个validator和单元测试全部通过。
+10. 当日DailyEdition通过验证，且最新publication manifest中的文件哈希全部匹配。
 
 日报只呈现今日概览以及日榜、周榜、月榜精选；淘汰原因保存在 `rejections/`，不在读者页面展示。

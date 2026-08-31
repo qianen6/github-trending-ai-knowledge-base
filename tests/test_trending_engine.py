@@ -221,6 +221,14 @@ class TrendingEngineTests(unittest.TestCase):
             summary = engine.ingest(root, incoming)
             self.assertEqual(summary["candidates"], 2)
             self.assertEqual(summary["newly_accepted"], summary["accepted"])
+            self.assertGreater(summary["committed_files"], 0)
+            edition = json.loads((root / "daily/2026-08-27.json").read_text(encoding="utf-8"))
+            self.assertEqual(edition["schema_version"], 1)
+            self.assertEqual(edition["displayed_projects"], [
+                name for period in engine.PERIOD_ORDER for name in edition["featured"][period]
+            ])
+            validation = engine.validate_root(root)
+            self.assertEqual(validation["daily_editions"], 1)
             entries = json.loads((root / "evaluations/2026-08-27.json").read_text(encoding="utf-8"))["entries"]
             by_name = {entry["full_name"]: entry for entry in entries}
             self.assertEqual(by_name["example/new-hot"]["hot_type"], "NEW_HOT")

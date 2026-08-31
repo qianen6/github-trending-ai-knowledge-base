@@ -14,6 +14,10 @@ proof/
 trending/html/
 trending/evidence/
 
+# Isolated runtime workspace created by setup scripts
+workspace/
+!workspace/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]

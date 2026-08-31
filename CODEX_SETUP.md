@@ -13,7 +13,7 @@ Codex 必须在同一次任务中完成本地安装和每日任务注册；用�
 当用户发送上面的安装请求或含义相同的请求时，Codex 必须实际执行以下步骤，不能只返回操作说明：
 
 1. 读取 `AGENTS.md`、`.codex/daily-task.json`、`AUTOMATION_PROMPT.md` 和当前操作系统对应的安装脚本。
-2. 在仓库根目录运行 `setup.ps1`（Windows）或 `setup.sh`（macOS/Linux），并确认 bootstrap、validators 与单元测试通过。
+2. 在仓库根目录运行 `setup.ps1`（Windows）或 `setup.sh`（macOS/Linux）；安装脚本创建隔离的 `workspace/` 运行目录，并确认 bootstrap、validators 与单元测试通过。
 3. 搜索并调用 Codex 应用的 `automation_update` 工具；调用前用 `list_projects` 取得当前仓库的绝对项目 ID。
 4. 检查现有 Codex 自动任务。若 `dedupe_key`、任务名、项目目录或提示词指向本仓库，则更新该任务，不再创建重复任务。
 5. 从 `AUTOMATION_PROMPT.md` 提取第一个 `text` 代码块的完整正文作为任务提示词。
@@ -31,6 +31,7 @@ Codex 必须在同一次任务中完成本地安装和每日任务注册；用�
 - 自动任务状态为 `ACTIVE`；
 - 自动任务绑定下载者自己的仓库绝对路径；
 - 自动任务提示词与 `AUTOMATION_PROMPT.md` 的首个 `text` 代码块一致；
+- `workspace/.kb-workspace` 已建立，源码与运行数据分离；
 - Codex 回报任务名称、运行时间、项目目录和验证结果。
 
 完成一次注册后，Codex 会每天自动启动知识库更新；无需每天再次发送安装命令。

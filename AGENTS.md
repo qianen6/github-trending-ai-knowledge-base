@@ -2,6 +2,20 @@
 
 Before every daily run, read `WORKFLOW.md`, `SCREENING_RULES.md`, `CARD_CONTENT_SPEC.md`, `DESIGN.md`, and `schemas/incoming.schema.json`.
 
+## Agent skills
+
+### Issue tracker
+
+Work is tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical five-label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. Read `CONTEXT.md` and `docs/adr/`; see `docs/agents/domain.md`.
+
 ## Mandatory Codex daily-task installation
 
 When the user says `安装这个仓库并创建每日任务`, asks to install/initialize the downloaded repository, or asks for automatic daily operation, read and execute `CODEX_SETUP.md` in the same turn.
@@ -15,18 +29,19 @@ When the user says `安装这个仓库并创建每日任务`, asks to install/in
 
 ## Mandatory card workflow
 
-1. Collect all 21 official GitHub Trending pages and deduplicate by `full_name`.
-2. Reuse stable repository evidence where permitted, but never copy an old `card` without rechecking it.
-3. For every repository, separately read its README and selected official evidence, then synthesize the nine `card` fields according to `CARD_CONTENT_SPEC.md`.
-4. Write the complete batch first to `proof/run-YYYY-MM-DD/incoming.candidate.json`.
-5. Run:
+1. Run `python scripts/collect_trending.py --root . --date YYYY-MM-DD --evidence` to collect the fixed 21-page matrix, hashed raw HTML, and cached official evidence. If a page fails, preserve its explicit failure record.
+2. Read `proof/run-YYYY-MM-DD/collection.json` from the active workspace and deduplicate by `full_name`.
+3. Reuse stable repository evidence where permitted, but never copy an old `card` without rechecking it.
+4. For every repository, separately read its README and selected official evidence, then synthesize the nine `card` fields according to `CARD_CONTENT_SPEC.md`.
+5. Resolve the active data root (`workspace/` when `workspace/.kb-workspace` exists, otherwise `.`), then write the complete batch to `<data-root>/proof/run-YYYY-MM-DD/incoming.candidate.json`.
+6. Run:
 
    ```powershell
-   python scripts/trending_engine.py validate-cards --root . --input proof/run-YYYY-MM-DD/incoming.candidate.json
+   python scripts/trending_engine.py validate-cards --root . --input <data-root>/proof/run-YYYY-MM-DD/incoming.candidate.json
    ```
 
-6. If the result is not `CARD VALIDATE PASS`, rewrite every reported repository. Do not promote, ingest, render, or publish the draft.
-7. After the card check passes, atomically promote the draft to `incoming/YYYY-MM-DD.json`, then run the fixed ingest/build/validate sequence in `WORKFLOW.md`.
+7. If the result is not `CARD VALIDATE PASS`, rewrite every reported repository. Do not promote, ingest, render, or publish the draft.
+8. After the card check passes, atomically promote the draft to `incoming/YYYY-MM-DD.json`, then run the fixed ingest/build/validate sequence in `WORKFLOW.md`. Ingest must produce a valid DailyEdition and publication transaction manifest.
 
 ## Mandatory Chinese README workflow
 

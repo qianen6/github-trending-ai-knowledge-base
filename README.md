@@ -35,7 +35,7 @@ cd github-trending-ai-knowledge-base
 安装这个仓库并创建每日任务
 ```
 
-Codex 会按照 [`CODEX_SETUP.md`](CODEX_SETUP.md) 运行安装脚本，并调用 Codex 自动任务工具，为**下载者自己的仓库路径**创建或更新每天 `09:00 Asia/Shanghai` 的 `ACTIVE` 任务。以后无需每天粘贴提示词。
+Codex 会按照 [`CODEX_SETUP.md`](CODEX_SETUP.md) 运行安装脚本，创建独立的 `workspace/` 运行目录，并调用 Codex 自动任务工具，为**下载者自己的仓库路径**创建或更新每天 `09:00 Asia/Shanghai` 的 `ACTIVE` 任务。以后无需每天粘贴提示词。
 
 ### 仅手工安装本地依赖
 
@@ -56,18 +56,18 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-安装脚本会创建 `.venv`、安装依赖、初始化空目录、生成空站点，并运行全部验证和测试。完成后可直接打开：
+安装脚本会创建 `.venv`、以可编辑包安装 `src/github_trending_kb`、初始化 `workspace/`、生成空站点，并运行全部验证和测试。完成后可直接打开：
 
 ```text
-site/index.html
+workspace/site/index.html
 ```
 
 ## 每日自动运行
 
 1. 首次下载后，在 Codex 中发送一次 `安装这个仓库并创建每日任务`。
 2. Codex 读取 [`.codex/daily-task.json`](.codex/daily-task.json)，创建或更新与当前下载路径绑定的每日任务。
-3. 每天到点后，任务读取 [`AUTOMATION_PROMPT.md`](AUTOMATION_PROMPT.md) 与根目录 [`AGENTS.md`](AGENTS.md)，完成采集、静态核验、卡片生成、README汉化、建站和验证。
-4. 完成后打开 `site/index.html` 查看结果。
+3. 每天到点后，确定性采集Module先保存21页原始HTML、哈希与证据缓存；Codex再完成静态核验、卡片生成和README汉化。
+4. DailyEdition固定榜单和README覆盖集合，整次发布通过事务manifest后生成站点；打开 `workspace/site/index.html` 查看结果。
 
 所有高风险中间写入都先落到 `proof/run-YYYY-MM-DD/` 草稿；卡片、README和站点关卡通过后才写入正式产物。
 
@@ -76,8 +76,9 @@ site/index.html
 当 `incoming/YYYY-MM-DD.json` 和前端 README 已由代理生成后，确定性阶段按以下顺序运行：
 
 ```powershell
-python scripts/trending_engine.py validate-cards --root . --input proof/run-YYYY-MM-DD/incoming.candidate.json
-python scripts/trending_engine.py ingest --root . --input incoming/YYYY-MM-DD.json
+$dataRoot = if (Test-Path workspace/.kb-workspace) { "workspace" } else { "." }
+python scripts/trending_engine.py validate-cards --root . --input "$dataRoot/proof/run-YYYY-MM-DD/incoming.candidate.json"
+python scripts/trending_engine.py ingest --root . --input "$dataRoot/incoming/YYYY-MM-DD.json"
 python scripts/readme_translations.py validate --root .
 python scripts/build_site.py --root .
 python scripts/trending_engine.py validate --root .
@@ -120,7 +121,11 @@ daily/          每日日报
 trending/       规范化页面与历史快照
 site/           离线HTML站点
 proof/          本地抓取、草稿和回滚证明（默认不提交）
+src/github_trending_kb/  可导入的核心Module
+workspace/      新安装默认使用的隔离运行数据根目录
 ```
+
+旧版本直接把运行数据放在仓库根目录；当前脚本保留该布局Adapter，不要求立即迁移历史数据。
 
 ## 数据与发布边界
 

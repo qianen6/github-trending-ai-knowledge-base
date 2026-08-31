@@ -17,6 +17,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install --no-deps -e .
       - name: Initialize and verify empty workspace
-        run: python scripts/bootstrap.py --root . --check
+        run: python scripts/bootstrap.py --root . --workspace --check
