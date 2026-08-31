@@ -52,7 +52,7 @@ class EmptySiteTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(validate.returncode, 0, validate.stderr)
-            self.assertIn("markdown_projects=0 daily_reports=0 html_pages=1 broken_links=0", validate.stdout)
+            self.assertIn("markdown_projects=0 readme_translations=0 daily_reports=0 html_pages=1 broken_links=0", validate.stdout)
 
 
 if __name__ == "__main__":

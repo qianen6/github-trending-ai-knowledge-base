@@ -53,6 +53,7 @@ def score_blocks() -> tuple[dict, dict]:
 def repo(full_name: str, created_at: str) -> dict:
     quality, value = score_blocks()
     url = f"https://github.com/{full_name}"
+    project_name = full_name.rsplit("/", 1)[-1]
     evidence = [url, url + "/blob/main/README.md", url + "/blob/main/src/main.py"]
     quality["evidence_urls"] = evidence
     value["evidence_urls"] = evidence
@@ -76,15 +77,21 @@ def repo(full_name: str, created_at: str) -> dict:
         "quality": quality,
         "value": value,
         "card": {
-            "one_line": "One-line introduction.",
-            "what": "What the project does.",
-            "audience": ["Developers"],
-            "usage": "Describe a task and receive an output.",
-            "features": ["Reusable workflow"],
-            "why": "It is receiving attention.",
-            "strengths": ["Complete implementation"],
-            "limitations": ["Static review only"],
-            "value": "A reusable project workflow.",
+            "one_line": f"{project_name} 是一个用于处理开发任务的可复用工具。",
+            "what": f"{project_name} 接收开发任务描述并生成对应结果。",
+            "audience": ["需要自动化开发流程的工程师"],
+            "usage": f"向 {project_name} 输入任务描述后运行工具并查看生成结果。",
+            "features": [
+                f"通过 {project_name} 把任务描述转换为可执行的处理流程",
+                f"使用 {project_name} 汇总并输出任务处理结果",
+            ],
+            "why": "它正在获得开发者关注，并覆盖常见自动化场景。",
+            "strengths": [
+                f"{project_name} 能够减少重复操作并统一任务处理方式",
+                f"{project_name} 可以嵌入现有开发工作流",
+            ],
+            "limitations": ["复杂任务仍需要人工检查生成结果"],
+            "value": "适合用于复用和规范常见开发任务流程。",
         },
         "evidence_urls": evidence,
     }
@@ -279,6 +286,88 @@ class TrendingEngineTests(unittest.TestCase):
         candidate["value"]["scores"]["cost_benefit"] = 6
         with self.assertRaises(ValueError):
             engine.validate_repository(candidate)
+
+    def test_card_rejects_repository_audit_evidence_as_features_or_strengths(self) -> None:
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["features"] = ["包含明确的依赖或构建清单", "执行项目声明的处理任务"]
+        with self.assertRaisesRegex(ValueError, "card.features must describe user-visible project capabilities"):
+            engine.validate_repository(candidate)
+
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["strengths"] = ["当前进入GitHub Trending候选池", "能够减少用户的重复操作"]
+        with self.assertRaisesRegex(ValueError, "card.strengths must describe project advantages"):
+            engine.validate_repository(candidate)
+
+    def test_card_requires_at_least_two_features_and_strengths(self) -> None:
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["features"] = ["执行项目声明的处理任务"]
+        with self.assertRaisesRegex(ValueError, "card.features must contain at least two project-specific items"):
+            engine.validate_repository(candidate)
+
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["strengths"] = ["能够减少用户的重复操作"]
+        with self.assertRaisesRegex(ValueError, "card.strengths must contain at least two project-specific items"):
+            engine.validate_repository(candidate)
+
+    def test_card_explanations_must_be_chinese(self) -> None:
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["what"] = "What the project does."
+        with self.assertRaisesRegex(ValueError, "card.what must contain a Chinese explanation"):
+            engine.validate_repository(candidate)
+
+    def test_card_rejects_generic_workflow_templates_in_explanatory_fields(self) -> None:
+        cases = {
+            "one_line": "示例项目是一个开发者工具项目，主要使用Python实现。",
+            "what": "项目围绕“某项能力”提供公开实现、文档或工作流。",
+            "usage": "按照README中的安装、配置或使用步骤操作。",
+            "why": "项目出现在monthly周期榜单中，页面展示的最高周期Stars为100。",
+            "value": "属于可持续使用的生产型系统，具备较完整的使用流程。",
+        }
+        for field, value in cases.items():
+            with self.subTest(field=field):
+                candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+                candidate["card"][field] = value
+                with self.assertRaisesRegex(ValueError, f"card.{field} contains a generic workflow template"):
+                    engine.validate_repository(candidate)
+
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["limitations"] = ["本知识库只做静态核验，没有安装或运行项目"]
+        with self.assertRaisesRegex(ValueError, "card.limitations contains a generic workflow template"):
+            engine.validate_repository(candidate)
+
+        candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")
+        candidate["card"]["what"] = (
+            "项目围绕“A lightweight, cloud-native GIS platform for visualizing, exploring, "
+            "and analyzing geospatial data in browsers, desktop applications, mobile devices, "
+            "and Jupyter notebooks.”提供开源实现、文档或工作流。"
+        )
+        with self.assertRaisesRegex(ValueError, "card.what must contain a Chinese explanation"):
+            engine.validate_repository(candidate)
+
+    def test_card_batch_rejects_reused_feature_and_strength_templates(self) -> None:
+        first = repo("example/first-project", "2026-08-01T00:00:00Z")
+        second = repo("example/second-project", "2026-08-01T00:00:00Z")
+        second["card"]["features"] = list(first["card"]["features"])
+        second["card"]["strengths"] = list(first["card"]["strengths"])
+
+        audit = engine.audit_card_batch([first, second])
+        self.assertEqual(audit["repositories"], 2)
+        self.assertEqual(audit["invalid_repositories"], 2)
+        self.assertEqual(audit["duplicate_feature_sets"], 1)
+        self.assertEqual(audit["duplicate_strength_sets"], 1)
+        with self.assertRaisesRegex(ValueError, "duplicate_feature_sets=1 duplicate_strength_sets=1"):
+            engine.validate_card_batch([first, second])
+
+    def test_card_batch_accepts_project_specific_chinese_cards(self) -> None:
+        audit = engine.validate_card_batch(
+            [
+                repo("example/first-project", "2026-08-01T00:00:00Z"),
+                repo("example/second-project", "2026-08-01T00:00:00Z"),
+            ]
+        )
+        self.assertEqual(audit["invalid_repositories"], 0)
+        self.assertEqual(audit["duplicate_feature_sets"], 0)
+        self.assertEqual(audit["duplicate_strength_sets"], 0)
 
     def test_license_scope_is_chinese_description_not_a_gate(self) -> None:
         candidate = repo("example/new-hot", "2026-08-01T00:00:00Z")

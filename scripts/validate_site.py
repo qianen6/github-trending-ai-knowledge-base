@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+from bs4 import BeautifulSoup
+
+from readme_translations import split_translation, validate_translations
 
 
 REQUIRED_PROJECT_HEADINGS = [
@@ -56,6 +61,10 @@ def main() -> None:
     args = parser.parse_args()
     root = args.root.resolve()
     catalog = json.loads((root / "catalog.json").read_text(encoding="utf-8"))
+    try:
+        readme_summary = validate_translations(root)
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"FAIL Chinese README validation: {exc}")
     project_mds = sorted((root / "repos").glob("*.md"))
     if len(project_mds) != catalog.get("entry_count"):
         raise SystemExit(f"FAIL catalog/project Markdown mismatch: {catalog.get('entry_count')} != {len(project_mds)}")
@@ -87,6 +96,32 @@ def main() -> None:
     expected_html = 1 + len(daily_mds) + len(project_mds)
     if len(html_files) != expected_html:
         raise SystemExit(f"FAIL expected {expected_html} HTML files, got {len(html_files)}")
+    manifest_path = root / "readmes" / "manifest.json"
+    translated_names = []
+    if manifest_path.is_file():
+        translated_names = [entry["full_name"] for entry in json.loads(manifest_path.read_text(encoding="utf-8-sig")).get("entries", [])]
+    for name in translated_names:
+        detail_path = root / "site" / "repos" / f"{name.replace('/', '__')}.html"
+        detail_text = detail_path.read_text(encoding="utf-8")
+        if 'id="chinese-readme"' not in detail_text:
+            raise SystemExit(f"FAIL project detail lacks embedded Chinese README: {name}")
+        readme_entry = next(entry for entry in json.loads(manifest_path.read_text(encoding="utf-8-sig"))["entries"] if entry["full_name"] == name)
+        _, readme_body = split_translation((root / readme_entry["translation"]).read_text(encoding="utf-8-sig"))
+        live_readme_body = re.sub(r"```[\s\S]*?```|~~~[\s\S]*?~~~", "", readme_body)
+        live_readme_body = re.sub(r"`[^`\n]*`", "", live_readme_body)
+        detail_soup = BeautifulSoup(detail_text, "html.parser")
+        readme_section = detail_soup.find(id="chinese-readme")
+        if readme_section is None:
+            raise SystemExit(f"FAIL project detail lacks embedded Chinese README: {name}")
+        visible_section = BeautifulSoup(str(readme_section), "html.parser")
+        for code_node in visible_section.find_all(["pre", "code"]):
+            code_node.decompose()
+        visible_html = str(visible_section).lower()
+        for tag in ("picture", "img", "video", "details", "table"):
+            if re.search(rf"<{tag}\b", live_readme_body, re.I) and readme_section.find(tag) is None:
+                raise SystemExit(f"FAIL project detail dropped README HTML tag <{tag}>: {name}")
+            if f"&lt;{tag}" in visible_html:
+                raise SystemExit(f"FAIL project detail escaped README HTML tag <{tag}>: {name}")
     broken = []
     for path in html_files:
         parser_obj = LinkParser()
@@ -100,7 +135,7 @@ def main() -> None:
                 broken.append(f"{path.relative_to(root)} -> {href}")
     if broken:
         raise SystemExit("FAIL broken links: " + "; ".join(broken[:20]))
-    print(f"SITE VALIDATE PASS markdown_projects={len(project_mds)} daily_reports={len(daily_mds)} html_pages={len(html_files)} broken_links=0")
+    print(f"SITE VALIDATE PASS markdown_projects={len(project_mds)} readme_translations={readme_summary['chinese_files']} daily_reports={len(daily_mds)} html_pages={len(html_files)} broken_links=0")
 
 
 if __name__ == "__main__":

@@ -2,23 +2,22 @@
 
 建议计划：每天 `09:00`，时区 `Asia/Shanghai`，工作目录为仓库根目录。
 
+将下面整段提示词交给 Codex；仓库根目录的 `AGENTS.md` 会提供同一套强制约束。
+
 ```text
-执行每日GitHub Trending知识库更新。先读取README.md、WORKFLOW.md、SCREENING_RULES.md、DESIGN.md和schemas/incoming.schema.json；这些文件分别是入口、执行、规则、视觉和字段的唯一来源。
+执行今天的 GitHub Trending 项目知识库更新。
 
-不可变约束：
-1. 采集Today/This week/This month × Global/Python/TypeScript/JavaScript/Jupyter Notebook/Go/Rust共21页，Spoken Language=Any。
-2. 候选只来自Trending，不做主题预过滤；按full_name去重，并保证raw_candidate_count等于evaluated_candidate_count。
-3. 已收录项目只更新，不重复新增卡片或面板。
-4. License只填写name、scope_zh、evidence_urls，不参与评分、门槛或合规判断。
-5. 禁止克隆、安装、导入或执行候选仓库；证据深度遵守WORKFLOW。
-6. 不手工覆盖T、F、等级或最终状态。
+开始前依次读取 AGENTS.md、README.md、WORKFLOW.md、SCREENING_RULES.md、CARD_CONTENT_SPEC.md、README_TRANSLATION_SPEC.md、DESIGN.md 和 schemas/incoming.schema.json，并以这些文件为唯一执行契约。
 
-原子写入schema_version=4的incoming/YYYY-MM-DD.json后依次执行：
-python scripts/trending_engine.py ingest --root . --input incoming/YYYY-MM-DD.json
-python scripts/build_site.py --root .
-python scripts/trending_engine.py validate --root .
-python scripts/validate_site.py --root .
-python -m unittest discover -s tests -p "test_*.py"
+必须完成：
+1. 采集 Today/This week/This month × Global/Python/TypeScript/JavaScript/Jupyter Notebook/Go/Rust 共21页，Spoken Language=Any。
+2. 候选仅来自 Trending；按 full_name 去重，raw_candidate_count 必须等于 evaluated_candidate_count。
+3. 静态核验每个候选的元数据、README、License、代码树和代表性源码/测试/配置；不克隆、不安装、不导入、不执行候选仓库。
+4. 为每个候选单独生成中文 card；功能写用户能做什么，优点写项目自身优势，禁止测试/CI/README/Trending套话和跨项目复用模板。
+5. 先写 proof/run-YYYY-MM-DD/incoming.candidate.json，执行 validate-cards；通过后才原子写入 incoming/YYYY-MM-DD.json 并 ingest。
+6. 计算前端日榜/周榜/月榜项目并集。只为这些项目准备中文 README：中文官方README原样复制，英文官方README完整忠实翻译，不摘要、不重组、不省略实质内容。
+7. 执行 README validator 后再建站；项目详情必须正确渲染Markdown、原生HTML、图片、视频、表格、代码块和折叠区块。
+8. 严格按 WORKFLOW.md 的命令顺序完成 build、engine validate、site validate 和单元测试。
 
-日报与首页按日榜、周榜、月榜展示，每栏最多5个且全局不重复。项目详情包含中文License作用域。最终报告页面采集状态、去重/评估/通过/新增/累计数量、三个榜单前五和Markdown/HTML路径，并声明候选来自Trending而非GitHub全站排名。
+最终用中文报告21页采集状态、页面记录数、去重/评估/通过/淘汰/新增/累计数量、日/周/月榜前五、README汉化数量、验证结果、Markdown/HTML路径，并注明候选来自GitHub Trending而非GitHub全站排名。
 ```

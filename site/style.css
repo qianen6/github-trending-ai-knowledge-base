@@ -86,6 +86,24 @@ h3 { font-size: 19px; margin: 0; }
 .prose th, .prose td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
 .prose th { color: var(--muted); font-size: 13px; }
 .prose code { background: var(--code); padding: 2px 5px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .92em; }
+.prose pre { overflow-x: auto; background: var(--code); padding: 16px; border: 1px solid var(--line); }
+.prose pre code { padding: 0; background: transparent; }
+.prose img { display: block; max-width: 100%; height: auto; margin: 18px auto; }
+.prose p[align="center"], .prose h1[align="center"], .prose h2[align="center"], .prose div[align="center"] { text-align: center; }
+.prose p[align="center"] img, .prose a > img, .prose picture img { display: inline-block; margin: 8px 4px; }
+.prose picture { display: inline-block; max-width: 100%; }
+.prose video { display: block; width: 100%; max-width: 100%; margin: 22px auto; background: #101214; }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 42px 0; }
+.prose blockquote { margin: 20px 0; padding: 2px 0 2px 18px; border-left: 3px solid var(--accent); color: var(--muted); }
+.prose details { margin: 20px 0; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
+.prose summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.prose table { display: block; overflow-x: auto; }
+.prose td { vertical-align: top; }
+.localized-readme { margin-top: 72px; padding-top: 40px; border-top: 2px solid var(--ink); }
+.localized-readme-head { margin-bottom: 30px; }
+.localized-readme-head h2 { margin: 0 0 8px; padding: 0; border: 0; }
+.localized-readme-head p { margin: 0; color: var(--muted); font-size: 14px; }
+.localized-readme-body > h1:first-child { margin-top: 0; }
 .back { display: inline-block; margin-bottom: 28px; color: var(--muted); }
 .footer { border-top: 1px solid var(--line); padding: 24px 0 42px; color: var(--muted); font-size: 13px; }
 .empty { color: var(--muted); border: 1px dashed var(--line); padding: 24px; }

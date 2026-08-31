@@ -8,6 +8,13 @@ import re
 from datetime import date
 from pathlib import Path
 
+import bleach
+import markdown as markdown_lib
+from bs4 import BeautifulSoup
+from markdown.extensions.toc import slugify_unicode
+
+from readme_translations import absolutize_markdown_links, split_translation
+
 from trending_engine import PERIOD_LABELS, PERIOD_ORDER, evaluation_value, select_period_features
 
 
@@ -100,6 +107,24 @@ h3 { font-size: 19px; margin: 0; }
 .prose th, .prose td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
 .prose th { color: var(--muted); font-size: 13px; }
 .prose code { background: var(--code); padding: 2px 5px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .92em; }
+.prose pre { overflow-x: auto; background: var(--code); padding: 16px; border: 1px solid var(--line); }
+.prose pre code { padding: 0; background: transparent; }
+.prose img { display: block; max-width: 100%; height: auto; margin: 18px auto; }
+.prose p[align="center"], .prose h1[align="center"], .prose h2[align="center"], .prose div[align="center"] { text-align: center; }
+.prose p[align="center"] img, .prose a > img, .prose picture img { display: inline-block; margin: 8px 4px; }
+.prose picture { display: inline-block; max-width: 100%; }
+.prose video { display: block; width: 100%; max-width: 100%; margin: 22px auto; background: #101214; }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 42px 0; }
+.prose blockquote { margin: 20px 0; padding: 2px 0 2px 18px; border-left: 3px solid var(--accent); color: var(--muted); }
+.prose details { margin: 20px 0; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); }
+.prose summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.prose table { display: block; overflow-x: auto; }
+.prose td { vertical-align: top; }
+.localized-readme { margin-top: 72px; padding-top: 40px; border-top: 2px solid var(--ink); }
+.localized-readme-head { margin-bottom: 30px; }
+.localized-readme-head h2 { margin: 0 0 8px; padding: 0; border: 0; }
+.localized-readme-head p { margin: 0; color: var(--muted); font-size: 14px; }
+.localized-readme-body > h1:first-child { margin-top: 0; }
 .back { display: inline-block; margin-bottom: 28px; color: var(--muted); }
 .footer { border-top: 1px solid var(--line); padding: 24px 0 42px; color: var(--muted); font-size: 13px; }
 .empty { color: var(--muted); border: 1px dashed var(--line); padding: 24px; }
@@ -118,6 +143,7 @@ h3 { font-size: 19px; margin: 0; }
 
 def inline(text: str) -> str:
     escaped = html.escape(text, quote=False)
+    escaped = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", lambda m: f'<img src="{html.escape(m.group(2), quote=True)}" alt="{html.escape(m.group(1), quote=True)}">', escaped)
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", lambda m: f'<a href="{html.escape(m.group(2), quote=True)}">{m.group(1)}</a>', escaped)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
@@ -125,50 +151,66 @@ def inline(text: str) -> str:
 
 
 def render_markdown(text: str) -> str:
-    lines = text.splitlines()
-    out: list[str] = []
-    i = 0
-    paragraph: list[str] = []
-
-    def flush() -> None:
-        if paragraph:
-            out.append("<p>" + inline(" ".join(paragraph)) + "</p>")
-            paragraph.clear()
-
-    while i < len(lines):
-        raw = lines[i].rstrip()
-        stripped = raw.strip()
-        if not stripped:
-            flush()
-            i += 1
-            continue
-        if stripped.startswith("# "):
-            flush(); out.append(f"<h1>{inline(stripped[2:])}</h1>"); i += 1; continue
-        if stripped.startswith("## "):
-            flush(); out.append(f"<h2>{inline(stripped[3:])}</h2>"); i += 1; continue
-        if stripped.startswith("### "):
-            flush(); out.append(f"<h3>{inline(stripped[4:])}</h3>"); i += 1; continue
-        if stripped.startswith("- "):
-            flush(); items = []
-            while i < len(lines) and lines[i].strip().startswith("- "):
-                items.append("<li>" + inline(lines[i].strip()[2:]) + "</li>"); i += 1
-            out.append("<ul>" + "".join(items) + "</ul>"); continue
-        if stripped.startswith("|") and i + 1 < len(lines) and re.match(r"^\|?\s*:?-+", lines[i + 1].strip().lstrip("|")):
-            flush(); rows = []
-            while i < len(lines) and lines[i].strip().startswith("|"):
-                cells = [cell.strip() for cell in lines[i].strip().strip("|").split("|")]
-                rows.append(cells); i += 1
-            if len(rows) >= 2:
-                head = rows[0]; body = rows[2:]
-                out.append("<table><thead><tr>" + "".join(f"<th>{inline(cell)}</th>" for cell in head) + "</tr></thead><tbody>")
-                for row in body:
-                    out.append("<tr>" + "".join(f"<td>{inline(cell)}</td>" for cell in row) + "</tr>")
-                out.append("</tbody></table>")
-            continue
-        paragraph.append(stripped)
-        i += 1
-    flush()
-    return "\n".join(out)
+    # Python-Markdown deliberately leaves Markdown inside raw HTML containers
+    # untouched unless md_in_html is enabled per container. Official READMEs
+    # commonly put tables, lists, and fenced examples inside <details> blocks.
+    text = re.sub(
+        r"<details(?![^>]*\bmarkdown\s*=)([^>]*)>",
+        r'<details markdown="1"\1>',
+        text,
+        flags=re.I,
+    )
+    rendered = markdown_lib.markdown(
+        text,
+        extensions=["extra", "sane_lists", "toc"],
+        extension_configs={"toc": {"slugify": slugify_unicode, "permalink": False}},
+        output_format="html5",
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    for unsafe in soup.find_all(["script", "style", "iframe", "object", "embed", "form"]):
+        unsafe.decompose()
+    cleaned = bleach.clean(
+        str(soup),
+        tags={
+            "a", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2", "h3", "h4", "h5", "h6",
+            "hr", "img", "kbd", "li", "ol", "p", "picture", "pre", "source", "span", "strong", "sub", "summary",
+            "sup", "table", "tbody", "td", "th", "thead", "tr", "ul", "video",
+        },
+        attributes={
+            "*": ["id", "class", "align", "title"],
+            "a": ["href", "target", "rel"],
+            "img": ["src", "srcset", "alt", "width", "height", "loading"],
+            "source": ["src", "srcset", "media", "type"],
+            "video": ["src", "width", "height", "controls", "poster", "preload"],
+            "details": ["open"],
+            "td": ["width", "align", "colspan", "rowspan"],
+            "th": ["width", "align", "colspan", "rowspan"],
+            "table": ["align"],
+        },
+        protocols={"http", "https", "mailto"},
+        strip=True,
+    )
+    soup = BeautifulSoup(cleaned, "html.parser")
+    heading_by_text = {
+        heading.get_text(" ", strip=True): heading.get("id")
+        for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+        if heading.get("id")
+    }
+    known_ids = {value for value in heading_by_text.values() if value}
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if href.startswith("#") and href[1:] not in known_ids:
+            matching = heading_by_text.get(link.get_text(" ", strip=True))
+            if matching:
+                link["href"] = f"#{matching}"
+        elif href.startswith(("http://", "https://")):
+            link["target"] = "_blank"
+            link["rel"] = "noopener noreferrer"
+    for image in soup.find_all("img"):
+        image["loading"] = "lazy"
+    for video in soup.find_all("video"):
+        video["preload"] = "metadata"
+    return str(soup)
 
 
 def section(text: str, heading: str) -> str:
@@ -259,6 +301,11 @@ def main() -> None:
     (site / "style.css").write_text(STYLE.strip() + "\n", encoding="utf-8")
 
     catalog = json.loads((root / "catalog.json").read_text(encoding="utf-8"))
+    readme_manifest_path = root / "readmes" / "manifest.json"
+    readme_entries = {}
+    if readme_manifest_path.is_file():
+        readme_manifest = json.loads(readme_manifest_path.read_text(encoding="utf-8-sig"))
+        readme_entries = {entry["full_name"]: entry for entry in readme_manifest.get("entries", [])}
     daily_files = sorted((root / "daily").glob("*.md"), reverse=True)
     latest_date = daily_files[0].stem if daily_files else None
     md_by_name = {}
@@ -267,11 +314,28 @@ def main() -> None:
         name = entry["full_name"]
         md_path = root / entry["card"]
         text = md_path.read_text(encoding="utf-8")
+        localized_html = ""
+        if name in readme_entries:
+            readme_entry = readme_entries[name]
+            readme_path = root / readme_entry["translation"]
+            _, readme_body = split_translation(readme_path.read_text(encoding="utf-8-sig"))
+            readme_body = absolutize_markdown_links(
+                readme_body,
+                name,
+                readme_entry["source_branch"],
+                readme_entry["source_path"],
+            )
+            localized_html = (
+                '<section class="localized-readme" id="chinese-readme">'
+                '<div class="localized-readme-head"><h2>中文 README</h2>'
+                f'<p>官方 README 的中文直译 · <a href="{html.escape(readme_entry["source_url"], quote=True)}">查看原文</a></p></div>'
+                f'<div class="localized-readme-body">{render_markdown(readme_body)}</div></section>'
+            )
         md_by_name[name] = text
         one_line[name] = first_paragraph(section(text, "一句话介绍"))
         back_href = f"../daily/{latest_date}.html" if latest_date else "../index.html"
         back_label = "返回最新日报" if latest_date else "返回首页"
-        detail_body = f'<main><article class="reading prose"><a class="back" href="{back_href}">← {back_label}</a>{render_markdown(text)}</article></main>'
+        detail_body = f'<main><article class="reading prose"><a class="back" href="{back_href}">← {back_label}</a>{render_markdown(text)}{localized_html}</article></main>'
         (site / "repos" / f"{name.replace('/', '__')}.html").write_text(page(name, detail_body, latest_date, "../"), encoding="utf-8")
 
     latest_stats_html = '<div class="stats">' + "".join(

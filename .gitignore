@@ -1,9 +1,5 @@
-# Local captures and rollback evidence
-archive/
-proof/
-trending/html/
-
-# Secrets and local configuration
+# Local environments and secrets
+.venv/
 .env
 .env.*
 !.env.example
@@ -11,6 +7,12 @@ trending/html/
 *.key
 credentials.*
 secrets.*
+
+# Raw captures, research evidence and rollback bundles
+archive/
+proof/
+trending/html/
+trending/evidence/
 
 # Python
 __pycache__/
@@ -29,4 +31,3 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
-

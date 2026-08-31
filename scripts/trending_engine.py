@@ -74,6 +74,60 @@ CARD_FIELDS = {
     "strengths", "limitations", "value"
 }
 
+CARD_SCALAR_FIELDS = ("one_line", "what", "usage", "why", "value")
+CARD_LIST_FIELDS = ("audience", "features", "strengths", "limitations")
+CARD_FORBIDDEN_PHRASES = {
+    "features": (
+        "提供与项目主张相对应的开源内容和使用文档",
+        "包含明确的依赖或构建清单",
+        "包含可定位的入口或核心实现文件",
+        "仓库包含测试或CI相关内容",
+        "README与当前根目录代码树可相互定位",
+        "存在可定位的入口、源码目录或核心实现",
+        "仓库包含测试或持续集成相关证据",
+    ),
+    "strengths": (
+        "当前进入GitHub Trending候选池",
+        "README提供了较清楚的使用路径",
+        "README提供安装、运行或使用路径",
+        "存在测试或持续集成证据",
+        "测试或CI证据可定位",
+    ),
+}
+CARD_FORBIDDEN_PATTERNS = {
+    "one_line": (
+        r"是一个.+项目[，,:].*主要使用.+实现",
+    ),
+    "what": (
+        r"项目围绕[“\"].+[”\"].*(?:提供|包含).*(?:实现|文档|工作流)",
+    ),
+    "audience": (
+        r"^需要相关开源(?:方案|工具)的开发者$",
+        r"^评估技术(?:选型与工作流|方案)的团队$",
+    ),
+    "usage": (
+        r"^(?:按照|先阅读)\s*README",
+    ),
+    "why": (
+        r"^项目出现在.+(?:Stars|星标).+[。.]?$",
+    ),
+    "limitations": (
+        r"^本知识库只做静态核验",
+    ),
+    "value": (
+        r"^属于(?:可持续使用的生产型系统|较完整的工具或工作流|可复用的基础设施或生态型能力)",
+    ),
+}
+
+
+def has_chinese_explanation(value: str) -> bool:
+    """Require Chinese prose while still allowing names such as GIS or Jupyter."""
+    if not re.search(r"[\u4e00-\u9fff]", value):
+        return False
+    # A long untranslated English clause wrapped in a few Chinese words is not
+    # a Chinese explanation. Technical names remain allowed between Chinese text.
+    return re.search(r"[A-Za-z][A-Za-z0-9 ,.'’\-–—/:()]{60,}", value) is None
+
 
 def parse_date(value: str) -> date:
     return date.fromisoformat(value[:10])
@@ -213,16 +267,88 @@ def validate_repository(repo: dict[str, Any]) -> None:
     card_data = repo["card"]
     if set(card_data) != CARD_FIELDS:
         raise ValueError("card fields mismatch")
-    for field in ("one_line", "what", "usage", "why", "value"):
+    for field in CARD_SCALAR_FIELDS:
         if not isinstance(card_data[field], str) or not card_data[field].strip():
             raise ValueError(f"card.{field} must be non-empty text")
-    for field in ("audience", "features", "strengths", "limitations"):
+        if not has_chinese_explanation(card_data[field]):
+            raise ValueError(f"card.{field} must contain a Chinese explanation")
+    for field in CARD_LIST_FIELDS:
         if not isinstance(card_data[field], list) or not card_data[field] or not all(isinstance(value, str) and value.strip() for value in card_data[field]):
             raise ValueError(f"card.{field} must be a non-empty text list")
+        if any(not has_chinese_explanation(value) for value in card_data[field]):
+            raise ValueError(f"card.{field} must contain Chinese explanations")
+        if field in {"features", "strengths"} and len(card_data[field]) < 2:
+            raise ValueError(f"card.{field} must contain at least two project-specific items")
+    for field, forbidden_phrases in CARD_FORBIDDEN_PHRASES.items():
+        if any(phrase in value for value in card_data[field] for phrase in forbidden_phrases):
+            if field == "features":
+                raise ValueError("card.features must describe user-visible project capabilities, not repository audit evidence")
+            raise ValueError("card.strengths must describe project advantages, not Trending or repository audit evidence")
+    for field, patterns in CARD_FORBIDDEN_PATTERNS.items():
+        values = card_data[field] if isinstance(card_data[field], list) else [card_data[field]]
+        if any(re.search(pattern, value, re.I) for value in values for pattern in patterns):
+            raise ValueError(f"card.{field} contains a generic workflow template")
 
     all_urls = repo["evidence_urls"] + license_data["evidence_urls"] + quality["evidence_urls"] + value["evidence_urls"]
     if not all_urls or any(not isinstance(url, str) or not url.startswith("https://github.com/") for url in all_urls):
         raise ValueError("all evidence must use GitHub URLs")
+
+
+def normalized_card_set(values: list[str]) -> tuple[str, ...]:
+    return tuple(re.sub(r"\s+", " ", value).strip().casefold() for value in values)
+
+
+def audit_card_batch(repositories: list[dict[str, Any]]) -> dict[str, Any]:
+    invalid_names: set[str] = set()
+    issues: list[str] = []
+    for repo in repositories:
+        name = repo.get("full_name", "<unknown>")
+        try:
+            validate_repository(repo)
+        except (KeyError, TypeError, ValueError) as exc:
+            invalid_names.add(name)
+            issues.append(f"{name}: {exc}")
+
+    duplicates: dict[str, list[list[str]]] = {}
+    for field in ("features", "strengths"):
+        by_fingerprint: dict[tuple[str, ...], list[str]] = {}
+        for repo in repositories:
+            name = repo.get("full_name", "<unknown>")
+            values = repo.get("card", {}).get(field)
+            if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+                continue
+            by_fingerprint.setdefault(normalized_card_set(values), []).append(name)
+        repeated = [sorted(names, key=str.casefold) for names in by_fingerprint.values() if len(names) > 1]
+        duplicates[field] = sorted(repeated, key=lambda names: (-len(names), [name.casefold() for name in names]))
+        for names in duplicates[field]:
+            invalid_names.update(names)
+            issues.append(f"duplicate card.{field} template reused by {', '.join(names)}")
+
+    return {
+        "repositories": len(repositories),
+        "invalid_repositories": len(invalid_names),
+        "duplicate_feature_sets": len(duplicates["features"]),
+        "duplicate_strength_sets": len(duplicates["strengths"]),
+        "issues": issues,
+    }
+
+
+def card_audit_summary(audit: dict[str, Any]) -> str:
+    return " ".join(
+        f"{key}={audit[key]}"
+        for key in (
+            "repositories", "invalid_repositories",
+            "duplicate_feature_sets", "duplicate_strength_sets",
+        )
+    )
+
+
+def validate_card_batch(repositories: list[dict[str, Any]]) -> dict[str, Any]:
+    audit = audit_card_batch(repositories)
+    if audit["invalid_repositories"]:
+        first_issue = audit["issues"][0] if audit["issues"] else "unknown card-content error"
+        raise ValueError(f"card batch validation failed: {card_audit_summary(audit)} first_issue={first_issue}")
+    return audit
 
 
 def percentile_map(values: dict[str, int | None]) -> dict[str, float]:
@@ -465,6 +591,7 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
         )
         for legacy_key in ("ai_value_score", "ai_level", "research_gate", "engineering_gate", "license_risk_tags"):
             entry.pop(legacy_key, None)
+        entry.pop("readme_zh", None)
         by_name[name] = entry
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -548,6 +675,7 @@ def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], ca
 ## 项目链接
 
 [{repo['full_name']}]({repo['url']})
+
 """
     atomic_text(root / "repos" / f"{repo['full_name'].replace('/', '__')}.md", text)
 
@@ -670,8 +798,7 @@ def ingest(root: Path, input_path: Path) -> dict[str, Any]:
     names = [repo["full_name"] for repo in repositories]
     if len(names) != len(set(names)):
         raise ValueError("duplicate repository enrichment")
-    for repo in repositories:
-        validate_repository(repo)
+    validate_card_batch(repositories)
 
     consolidated = consolidate_pages(pages)
     candidate_pool = payload.get("candidate_pool")
@@ -768,6 +895,9 @@ def parser() -> argparse.ArgumentParser:
     ingest_cmd.add_argument("--input", required=True, type=Path)
     validate_cmd = sub.add_parser("validate")
     validate_cmd.add_argument("--root", required=True, type=Path)
+    cards_cmd = sub.add_parser("validate-cards")
+    cards_cmd.add_argument("--root", required=True, type=Path)
+    cards_cmd.add_argument("--input", required=True, type=Path)
     return root
 
 
@@ -776,9 +906,19 @@ def main() -> int:
     if args.command == "ingest":
         result = ingest(args.root.resolve(), args.input.resolve())
         print("INGEST PASS " + " ".join(f"{key}={value}" for key, value in result.items()))
-    else:
+    elif args.command == "validate":
         result = validate_root(args.root.resolve())
         print("VALIDATE PASS " + " ".join(f"{key}={value}" for key, value in result.items()))
+    else:
+        payload = read_json(args.input.resolve(), {})
+        repositories = payload.get("repositories", [])
+        audit = audit_card_batch(repositories)
+        status = "PASS" if not audit["invalid_repositories"] else "FAIL"
+        print(f"CARD VALIDATE {status} {card_audit_summary(audit)}")
+        for issue in audit["issues"][:20]:
+            print(f"CARD ISSUE {issue}")
+        if audit["invalid_repositories"]:
+            return 1
     return 0
 
 

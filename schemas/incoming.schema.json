@@ -94,15 +94,15 @@
           "type": "object",
           "required": ["one_line", "what", "audience", "usage", "features", "why", "strengths", "limitations", "value"],
           "properties": {
-            "one_line": { "type": "string", "minLength": 1 },
-            "what": { "type": "string", "minLength": 1 },
-            "audience": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-            "usage": { "type": "string", "minLength": 1 },
-            "features": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-            "why": { "type": "string", "minLength": 1 },
-            "strengths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-            "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-            "value": { "type": "string", "minLength": 1 }
+            "one_line": { "type": "string", "minLength": 1, "description": "中文说明项目是什么以及能解决什么问题；必要技术名词可保留原文。" },
+            "what": { "type": "string", "minLength": 1, "description": "用中文解释项目的目标问题、核心工作方式和输出，不得原样粘贴英文简介。" },
+            "audience": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "用中文列出实际使用者或团队。" },
+            "usage": { "type": "string", "minLength": 1, "description": "用中文说明实际使用入口和基本操作方式。" },
+            "features": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 }, "description": "用中文列出至少两条用户可完成的任务或领域能力；不得填写README、依赖、源码入口、测试或CI证据。" },
+            "why": { "type": "string", "minLength": 1, "description": "用中文说明项目能力与当前关注度为何值得进一步了解。" },
+            "strengths": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 }, "description": "用中文列出至少两条项目自身的产品或技术优势；不得填写Trending状态、README清晰度、测试或CI证据。" },
+            "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "用中文说明采用项目时真实的能力边界、资源要求或适用条件。" },
+            "value": { "type": "string", "minLength": 1, "description": "用中文概括项目在目标场景中的实际价值。" }
           },
           "additionalProperties": false
         },
