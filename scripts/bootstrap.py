@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +48,51 @@ def initialize(root: Path) -> None:
         )
 
 
+def validate_codex_daily_task(root: Path) -> None:
+    contract_path = root / ".codex" / "daily-task.json"
+    setup_doc = root / "CODEX_SETUP.md"
+    if not contract_path.is_file():
+        raise ValueError("missing .codex/daily-task.json")
+    if not setup_doc.is_file():
+        raise ValueError("missing CODEX_SETUP.md")
+
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    expected = {
+        "schema_version": 1,
+        "contract": "codex-daily-task-installer",
+        "kind": "cron",
+        "status": "ACTIVE",
+        "execution_environment": "local",
+        "destination": "local",
+        "project_root": ".",
+        "prompt_file": "AUTOMATION_PROMPT.md",
+        "prompt_format": "first-fenced-text-block",
+    }
+    for key, value in expected.items():
+        if contract.get(key) != value:
+            raise ValueError(f"invalid daily-task field {key}: {contract.get(key)!r}")
+    if contract.get("schedule") != {
+        "frequency": "daily",
+        "time": "09:00",
+        "timezone": "Asia/Shanghai",
+    }:
+        raise ValueError("invalid daily-task schedule")
+    if not str(contract.get("name", "")).strip() or not str(contract.get("dedupe_key", "")).strip():
+        raise ValueError("daily-task name and dedupe_key are required")
+
+    prompt_path = root / str(contract["prompt_file"])
+    if not prompt_path.is_file():
+        raise ValueError(f"missing automation prompt: {prompt_path.name}")
+    prompt_doc = prompt_path.read_text(encoding="utf-8")
+    match = re.search(r"```text\s*\n(.*?)\n```", prompt_doc, re.DOTALL)
+    if not match or len(match.group(1).strip()) < 200:
+        raise ValueError("AUTOMATION_PROMPT.md must contain a complete text code block")
+    print(
+        "CODEX DAILY TASK CONTRACT PASS "
+        f"name={contract['name']} schedule=09:00 timezone=Asia/Shanghai prompt_chars={len(match.group(1).strip())}"
+    )
+
+
 def run(command: list[str], root: Path) -> None:
     print("+ " + " ".join(command), flush=True)
     subprocess.run(command, cwd=root, check=True)
@@ -59,6 +105,7 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     initialize(root)
+    validate_codex_daily_task(root)
     print(f"BOOTSTRAP PASS root={root}")
     if args.check:
         run([sys.executable, "scripts/build_site.py", "--root", "."], root)

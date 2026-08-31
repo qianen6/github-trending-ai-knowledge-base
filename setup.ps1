@@ -12,3 +12,5 @@ if ($LASTEXITCODE -ne 0) {
 & $venvPython (Join-Path $PSScriptRoot 'scripts\bootstrap.py') --root $PSScriptRoot --check
 if ($LASTEXITCODE -ne 0) { throw 'Workspace verification failed' }
 Write-Output 'SETUP PASS: activate with .\.venv\Scripts\Activate.ps1'
+Write-Output 'CODEX NEXT: open this repository in Codex and send: 安装这个仓库并创建每日任务'
+Write-Output 'CODEX CONTRACT: CODEX_SETUP.md'

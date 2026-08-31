@@ -20,6 +20,25 @@
 
 要求：Python 3.11+，推荐 Python 3.12。
 
+### 推荐：让 Codex 安装并创建每日任务
+
+先克隆仓库，然后在 **Codex 桌面应用**中打开下载后的仓库目录：
+
+```powershell
+git clone https://github.com/qianen6/github-trending-ai-knowledge-base.git
+cd github-trending-ai-knowledge-base
+```
+
+只需向 Codex 发送一次：
+
+```text
+安装这个仓库并创建每日任务
+```
+
+Codex 会按照 [`CODEX_SETUP.md`](CODEX_SETUP.md) 运行安装脚本，并调用 Codex 自动任务工具，为**下载者自己的仓库路径**创建或更新每天 `09:00 Asia/Shanghai` 的 `ACTIVE` 任务。以后无需每天粘贴提示词。
+
+### 仅手工安装本地依赖
+
 ### Windows PowerShell
 
 ```powershell
@@ -43,12 +62,12 @@ chmod +x setup.sh
 site/index.html
 ```
 
-## 最简单的每日使用方式
+## 每日自动运行
 
-1. 在 Codex 中打开仓库目录。
-2. 将 [`AUTOMATION_PROMPT.md`](AUTOMATION_PROMPT.md) 中的提示词交给 Codex，或者创建每天 `09:00 Asia/Shanghai` 的自动任务。
-3. Codex 会读取根目录 [`AGENTS.md`](AGENTS.md)，完成采集、静态核验、卡片生成、README汉化、建站和验证。
-4. 完成后打开 `site/index.html`。
+1. 首次下载后，在 Codex 中发送一次 `安装这个仓库并创建每日任务`。
+2. Codex 读取 [`.codex/daily-task.json`](.codex/daily-task.json)，创建或更新与当前下载路径绑定的每日任务。
+3. 每天到点后，任务读取 [`AUTOMATION_PROMPT.md`](AUTOMATION_PROMPT.md) 与根目录 [`AGENTS.md`](AGENTS.md)，完成采集、静态核验、卡片生成、README汉化、建站和验证。
+4. 完成后打开 `site/index.html` 查看结果。
 
 所有高风险中间写入都先落到 `proof/run-YYYY-MM-DD/` 草稿；卡片、README和站点关卡通过后才写入正式产物。
 
@@ -80,6 +99,8 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 文档入口
 
 - [`AGENTS.md`](AGENTS.md)：Codex 强制执行契约。
+- [`CODEX_SETUP.md`](CODEX_SETUP.md)：Codex 本地安装与每日任务注册契约。
+- [`.codex/daily-task.json`](.codex/daily-task.json)：可移植的每日任务参数。
 - [`WORKFLOW.md`](WORKFLOW.md)：每日顺序、产物链和完成条件。
 - [`SCREENING_RULES.md`](SCREENING_RULES.md)：H/T/Q/V/F、License、去重和榜单规则。
 - [`CARD_CONTENT_SPEC.md`](CARD_CONTENT_SPEC.md)：中文项目卡片规范。

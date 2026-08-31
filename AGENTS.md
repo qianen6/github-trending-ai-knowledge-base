@@ -2,6 +2,17 @@
 
 Before every daily run, read `WORKFLOW.md`, `SCREENING_RULES.md`, `CARD_CONTENT_SPEC.md`, `DESIGN.md`, and `schemas/incoming.schema.json`.
 
+## Mandatory Codex daily-task installation
+
+When the user says `安装这个仓库并创建每日任务`, asks to install/initialize the downloaded repository, or asks for automatic daily operation, read and execute `CODEX_SETUP.md` in the same turn.
+
+- Run the platform setup script and verify it.
+- Search for and call the Codex app `automation_update` tool; do not stop after printing instructions or a prompt.
+- Read `.codex/daily-task.json` as the portable installation contract and use the first `text` code block in `AUTOMATION_PROMPT.md` as the automation prompt.
+- Resolve the downloaded repository's own absolute project ID and working directory; never reuse the publisher's local path.
+- Inspect existing automations and update a matching task instead of creating a duplicate.
+- Read the created/updated task back and verify its `ACTIVE` status, daily schedule, project ID, working directory, and prompt.
+
 ## Mandatory card workflow
 
 1. Collect all 21 official GitHub Trending pages and deduplicate by `full_name`.

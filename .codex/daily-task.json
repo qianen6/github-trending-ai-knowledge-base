@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "contract": "codex-daily-task-installer",
+  "name": "GitHub Trending 项目知识库每日更新",
+  "dedupe_key": "github-trending-ai-knowledge-base:daily",
+  "kind": "cron",
+  "schedule": {
+    "frequency": "daily",
+    "time": "09:00",
+    "timezone": "Asia/Shanghai"
+  },
+  "status": "ACTIVE",
+  "execution_environment": "local",
+  "destination": "local",
+  "project_root": ".",
+  "prompt_file": "AUTOMATION_PROMPT.md",
+  "prompt_format": "first-fenced-text-block",
+  "model_policy": "use-current-codex-model",
+  "reasoning_effort": "high",
+  "install_doc": "CODEX_SETUP.md"
+}
