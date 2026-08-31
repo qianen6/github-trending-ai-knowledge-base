@@ -48,10 +48,12 @@ class DailyEditionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "daily").mkdir()
-            (root / "daily" / "2026-08-31.json").write_text(json.dumps(edition), encoding="utf-8")
+            data = root / "workspace"
+            (data / "daily").mkdir(parents=True)
+            (data / ".kb-workspace").write_text("test\n", encoding="utf-8")
+            (data / "daily" / "2026-08-31.json").write_text(json.dumps(edition), encoding="utf-8")
             # This heading must not leak into coverage when a structured edition exists.
-            (root / "daily" / "2026-08-31.md").write_text("### wrong/from-markdown\n", encoding="utf-8")
+            (data / "daily" / "2026-08-31.md").write_text("### wrong/from-markdown\n", encoding="utf-8")
             self.assertEqual(featured_names(root), {"example/daily", "example/weekly"})
 
 

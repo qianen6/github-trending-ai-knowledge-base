@@ -15,10 +15,13 @@ class EmptySiteTests(unittest.TestCase):
     def test_empty_repository_builds_and_validates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            data = root / "workspace"
+            data.mkdir()
+            (data / ".kb-workspace").write_text("test\n", encoding="utf-8")
             for name in ("daily", "repos", "site"):
-                (root / name).mkdir(parents=True, exist_ok=True)
-            (root / "index.md").write_text("# GitHub Trending 项目索引\n\n尚未执行首次采集。\n", encoding="utf-8")
-            (root / "catalog.json").write_text(
+                (data / name).mkdir(parents=True, exist_ok=True)
+            (data / "index.md").write_text("# GitHub Trending 项目索引\n\n尚未执行首次采集。\n", encoding="utf-8")
+            (data / "catalog.json").write_text(
                 json.dumps(
                     {
                         "schema_version": 2,
@@ -42,7 +45,7 @@ class EmptySiteTests(unittest.TestCase):
             )
             self.assertEqual(build.returncode, 0, build.stderr)
             self.assertIn("SITE PASS project_pages=0 daily_pages=0", build.stdout)
-            home = (root / "site" / "index.html").read_text(encoding="utf-8")
+            home = (data / "site" / "index.html").read_text(encoding="utf-8")
             self.assertIn("暂无新增项目", home)
 
             validate = subprocess.run(

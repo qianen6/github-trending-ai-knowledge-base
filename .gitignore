@@ -8,14 +8,8 @@
 credentials.*
 secrets.*
 
-# Raw captures, research evidence and rollback bundles
-archive/
-proof/
-trending/html/
-trending/evidence/
-
-# Isolated runtime workspace created by setup scripts
-workspace/
+# Runtime workspace created by setup scripts
+workspace/*
 !workspace/.gitkeep
 
 # Python

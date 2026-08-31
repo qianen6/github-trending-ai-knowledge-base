@@ -28,4 +28,4 @@ This repository turns the fixed official GitHub Trending matrix into a reproduci
 4. Card features describe user-visible capabilities; strengths describe project advantages.
 5. DailyEdition is the source of truth for front-end selection and README coverage.
 6. A publication is complete only after its transaction manifest is committed.
-7. Legacy root workspaces remain readable; new installations use `workspace/`.
+7. `workspace/` is the only mutable data root.

@@ -23,16 +23,17 @@ class ArtifactTransactionTests(unittest.TestCase):
             tx = ArtifactTransaction(layout, "2026-08-31")
             tx.stage_text("catalog.json", "new\n")
             manifest = tx.commit()
-            self.assertEqual((root / "catalog.json").read_text(), "new\n")
+            self.assertEqual((root / "workspace/catalog.json").read_text(), "new\n")
             self.assertEqual(manifest["file_count"], 1)
-            self.assertTrue((root / ".kb-state/commits/2026-08-31.json").is_file())
+            self.assertTrue((root / "workspace/.kb-state/commits/2026-08-31.json").is_file())
 
     def test_failure_restores_every_prior_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / "a.txt").write_text("old-a", encoding="utf-8")
-            (root / "b.txt").write_text("old-b", encoding="utf-8")
             layout = WorkspaceLayout.discover(root)
+            layout.data_root.mkdir(parents=True)
+            (layout.data_root / "a.txt").write_text("old-a", encoding="utf-8")
+            (layout.data_root / "b.txt").write_text("old-b", encoding="utf-8")
             tx = ArtifactTransaction(layout, "2026-08-31")
             tx.stage_text("a.txt", "new-a")
             tx.stage_text("b.txt", "new-b")
@@ -49,9 +50,9 @@ class ArtifactTransactionTests(unittest.TestCase):
             with patch.object(transaction_module.os, "replace", side_effect=fail_second_staged):
                 with self.assertRaises(OSError):
                     tx.commit()
-            self.assertEqual((root / "a.txt").read_text(), "old-a")
-            self.assertEqual((root / "b.txt").read_text(), "old-b")
-            self.assertFalse((root / ".kb-state/transaction.json").exists())
+            self.assertEqual((layout.data_root / "a.txt").read_text(), "old-a")
+            self.assertEqual((layout.data_root / "b.txt").read_text(), "old-b")
+            self.assertFalse((layout.data_root / ".kb-state/transaction.json").exists())
 
 
 if __name__ == "__main__":

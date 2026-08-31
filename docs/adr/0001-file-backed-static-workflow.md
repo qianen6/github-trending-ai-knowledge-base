@@ -5,7 +5,7 @@
 
 ## Decision
 
-Keep JSON, Markdown, raw evidence files, and generated HTML as the durable storage format. Do not add a database or execute candidate repositories. Centralize paths through `WorkspaceLayout`; use the repository root as a legacy adapter and `workspace/` as the default adapter for new installations.
+Keep JSON, Markdown, raw evidence files, and generated HTML as the durable storage format. Do not add a database or execute candidate repositories. Centralize every mutable path through `WorkspaceLayout` and use `workspace/` as the only data root.
 
 ## Consequences
 

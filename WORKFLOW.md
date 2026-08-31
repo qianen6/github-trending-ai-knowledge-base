@@ -12,7 +12,7 @@
 
 每页保留URL、采集时间、状态、SHA-256、原始排名、仓库信息、周期Stars和Built by。GitHub未公开完整Trending算法，因此所有输出均称为Trending候选池，不称为全站排名。
 
-新安装把运行数据放在 `workspace/`；已有仓库若没有 `workspace/.kb-workspace` 标记，则继续读取根目录旧布局。所有脚本通过 `WorkspaceLayout` 解析同一个活动工作区。
+全部运行数据统一放在 `workspace/`；所有脚本通过 `WorkspaceLayout` 解析这一数据根目录，项目根目录只保留源码、规则、文档、schema、测试和安装入口。
 
 ## 每日执行
 
@@ -25,7 +25,7 @@ collect_trending通过固定矩阵采集21个页面并保存原始HTML、SHA-256
 → 对未收录项目做静态源码核验
 → 对每个候选单独提取项目问题、输入、处理、输出、功能、优势和限制
 → 按CARD_CONTENT_SPEC生成中文card，不复用类别模板或旧卡片套话
-→ 写入proof/run-YYYY-MM-DD/incoming.candidate.json草稿
+→ 写入workspace/proof/run-YYYY-MM-DD/incoming.candidate.json草稿
 → validate-cards执行逐仓库中文语义检查与批次反模板检查
 → 通过后原子写入schema_version=4的incoming正式批次
 → ingest计算H/T/Q/V/F并更新长期目录
@@ -66,7 +66,7 @@ README、依赖、入口、测试和 CI 证据只进入 `quality.rationale` 与 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
-$dataRoot = if (Test-Path workspace/.kb-workspace) { "workspace" } else { "." }
+$dataRoot = "workspace"
 python scripts/collect_trending.py --root . --date YYYY-MM-DD --evidence
 python scripts/trending_engine.py validate-cards --root . --input "$dataRoot/proof/run-YYYY-MM-DD/incoming.candidate.json"
 python scripts/trending_engine.py ingest --root . --input "$dataRoot/incoming/YYYY-MM-DD.json"
@@ -80,16 +80,16 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 产物链
 
 ```text
-trending/html + trending/evidence + proof/run-YYYY-MM-DD/collection.json
-→ trending/snapshots
-→ proof/run-YYYY-MM-DD/incoming.candidate.json
+workspace/trending/html + workspace/trending/evidence + workspace/proof/run-YYYY-MM-DD/collection.json
+→ workspace/trending/snapshots
+→ workspace/proof/run-YYYY-MM-DD/incoming.candidate.json
 → validate-cards
-→ incoming
-→ evaluations + rejections
-→ catalog + repos + daily
-→ daily/YYYY-MM-DD.json DailyEdition
-→ .kb-state/commits/YYYY-MM-DD.json publication manifest
-→ readmes/manifest.json + readmes/*.zh-CN.md
+→ workspace/incoming
+→ workspace/evaluations + workspace/rejections
+→ workspace/catalog + workspace/repos + workspace/daily
+→ workspace/daily/YYYY-MM-DD.json DailyEdition
+→ workspace/.kb-state/commits/YYYY-MM-DD.json publication manifest
+→ workspace/readmes/manifest.json + workspace/readmes/*.zh-CN.md
 → readme_translations validate
 → site
 ```

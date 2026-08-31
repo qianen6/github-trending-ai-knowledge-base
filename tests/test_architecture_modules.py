@@ -27,14 +27,15 @@ class ArchitectureModuleTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_new_install_uses_isolated_workspace_while_legacy_root_remains_supported(self) -> None:
+    def test_workspace_is_the_only_runtime_data_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            layout = initialize(root, isolated=True)
+            layout = initialize(root)
             self.assertEqual(layout.data_root, root / "workspace")
             self.assertTrue((root / "workspace/.kb-workspace").is_file())
             self.assertTrue((root / "workspace/catalog.json").is_file())
             self.assertEqual(WorkspaceLayout.discover(root).data_root, root / "workspace")
+            self.assertFalse((root / "catalog.json").exists())
 
 
 if __name__ == "__main__":

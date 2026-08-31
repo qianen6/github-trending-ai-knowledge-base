@@ -6,11 +6,10 @@ import json
 import re
 import shutil
 import uuid
-from datetime import date
 from pathlib import Path
 
 from .domain import PERIOD_LABELS, PERIOD_ORDER
-from .edition import featured_evaluations, select_period_features, validate_daily_edition
+from .edition import featured_evaluations, validate_daily_edition
 from .github_markdown import render_markdown
 from .localization import absolutize_markdown_links, split_translation
 from .ranking import evaluation_value
@@ -281,31 +280,20 @@ def main() -> None:
     latest_period_sections = period_sections({period: [] for period in PERIOD_ORDER}, one_line, "repos/")
     for daily_path in daily_files:
         report_date = daily_path.stem
-        incoming = json.loads((root / f"incoming/{report_date}.json").read_text(encoding="utf-8"))
         evaluation = json.loads((root / f"evaluations/{report_date}.json").read_text(encoding="utf-8"))
         edition_path = root / "daily" / f"{report_date}.json"
-        if edition_path.is_file():
-            edition = json.loads(edition_path.read_text(encoding="utf-8"))
-            validate_daily_edition(edition)
-            featured = featured_evaluations(edition, evaluation["entries"])
-            edition_stats = edition["stats"]
-            stats = [
-                (str(edition_stats["pages"]), "Trending页面"),
-                (str(edition_stats["raw_candidates"]), "去重候选"),
-                (str(edition_stats["accepted"]), "通过筛选"),
-                (str(len(edition["displayed_projects"])), "新增展示"),
-            ]
-        else:
-            # Legacy adapter for historical runs produced before DailyEdition.
-            accepted_eval = [item for item in evaluation["entries"] if item["final"]["status"] == "accepted"]
-            featured = select_period_features(evaluation["entries"], catalog, date.fromisoformat(report_date))
-            pool = incoming.get("candidate_pool") or incoming.get("topic_filter") or {}
-            stats = [
-                (str(len(incoming["pages"])), "Trending页面"),
-                (str(pool.get("raw_candidate_count", len(evaluation["entries"]))), "去重候选"),
-                (str(len(accepted_eval)), "通过筛选"),
-                (str(sum(len(items) for items in featured.values())), "新增展示"),
-            ]
+        if not edition_path.is_file():
+            raise ValueError(f"missing DailyEdition: {edition_path}")
+        edition = json.loads(edition_path.read_text(encoding="utf-8"))
+        validate_daily_edition(edition)
+        featured = featured_evaluations(edition, evaluation["entries"])
+        edition_stats = edition["stats"]
+        stats = [
+            (str(edition_stats["pages"]), "Trending页面"),
+            (str(edition_stats["raw_candidates"]), "去重候选"),
+            (str(edition_stats["accepted"]), "通过筛选"),
+            (str(len(edition["displayed_projects"])), "新增展示"),
+        ]
         stats_html = "<div class=\"stats\">" + "".join(f'<div class="stat"><strong>{value}</strong><span>{label}</span></div>' for value, label in stats) + "</div>"
         if report_date == latest_date:
             latest_stats_html = stats_html

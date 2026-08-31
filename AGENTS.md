@@ -30,18 +30,18 @@ When the user says `安装这个仓库并创建每日任务`, asks to install/in
 ## Mandatory card workflow
 
 1. Run `python scripts/collect_trending.py --root . --date YYYY-MM-DD --evidence` to collect the fixed 21-page matrix, hashed raw HTML, and cached official evidence. If a page fails, preserve its explicit failure record.
-2. Read `proof/run-YYYY-MM-DD/collection.json` from the active workspace and deduplicate by `full_name`.
+2. Read `workspace/proof/run-YYYY-MM-DD/collection.json` and deduplicate by `full_name`.
 3. Reuse stable repository evidence where permitted, but never copy an old `card` without rechecking it.
 4. For every repository, separately read its README and selected official evidence, then synthesize the nine `card` fields according to `CARD_CONTENT_SPEC.md`.
-5. Resolve the active data root (`workspace/` when `workspace/.kb-workspace` exists, otherwise `.`), then write the complete batch to `<data-root>/proof/run-YYYY-MM-DD/incoming.candidate.json`.
+5. Use `workspace/` as the only data root, then write the complete batch to `workspace/proof/run-YYYY-MM-DD/incoming.candidate.json`.
 6. Run:
 
    ```powershell
-   python scripts/trending_engine.py validate-cards --root . --input <data-root>/proof/run-YYYY-MM-DD/incoming.candidate.json
+   python scripts/trending_engine.py validate-cards --root . --input workspace/proof/run-YYYY-MM-DD/incoming.candidate.json
    ```
 
 7. If the result is not `CARD VALIDATE PASS`, rewrite every reported repository. Do not promote, ingest, render, or publish the draft.
-8. After the card check passes, atomically promote the draft to `incoming/YYYY-MM-DD.json`, then run the fixed ingest/build/validate sequence in `WORKFLOW.md`. Ingest must produce a valid DailyEdition and publication transaction manifest.
+8. After the card check passes, atomically promote the draft to `workspace/incoming/YYYY-MM-DD.json`, then run the fixed ingest/build/validate sequence in `WORKFLOW.md`. Ingest must produce a valid DailyEdition and publication transaction manifest.
 
 ## Mandatory Chinese README workflow
 

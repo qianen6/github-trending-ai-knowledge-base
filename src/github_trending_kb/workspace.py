@@ -9,12 +9,7 @@ WORKSPACE_MARKER = ".kb-workspace"
 
 @dataclass(frozen=True)
 class WorkspaceLayout:
-    """Centralize every repository and runtime-data path.
-
-    Existing repositories without a marker keep the legacy root layout. New
-    installations create ``workspace/.kb-workspace`` and keep mutable runtime
-    data below ``workspace/``.
-    """
+    """Centralize all mutable runtime data below ``workspace/``."""
 
     project_root: Path
     data_root: Path
@@ -23,18 +18,16 @@ class WorkspaceLayout:
     def discover(cls, root: Path) -> "WorkspaceLayout":
         project_root = root.resolve()
         workspace = project_root / "workspace"
-        data_root = workspace if (workspace / WORKSPACE_MARKER).is_file() else project_root
-        return cls(project_root=project_root, data_root=data_root)
+        return cls(project_root=project_root, data_root=workspace)
 
     @classmethod
-    def initialize(cls, root: Path, *, isolated: bool = False) -> "WorkspaceLayout":
+    def initialize(cls, root: Path) -> "WorkspaceLayout":
         project_root = root.resolve()
-        if isolated:
-            workspace = project_root / "workspace"
-            workspace.mkdir(parents=True, exist_ok=True)
-            (workspace / WORKSPACE_MARKER).write_text(
-                "GitHub Trending knowledge-base runtime workspace\n", encoding="utf-8"
-            )
+        workspace = project_root / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / WORKSPACE_MARKER).write_text(
+            "GitHub Trending knowledge-base runtime workspace\n", encoding="utf-8"
+        )
         return cls.discover(project_root)
 
     def path(self, relative: str | Path) -> Path:

@@ -55,7 +55,7 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(first["successful_pages"], 21)
             self.assertEqual(first["candidate_count"], 1)
             self.assertEqual(
-                len(list((root / "trending" / "html" / "2026-08-31").glob("*.html"))),
+                len(list((root / "workspace" / "trending" / "html" / "2026-08-31").glob("*.html"))),
                 21,
             )
 

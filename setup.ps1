@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 & $venvPython -m pip install --no-deps -e $PSScriptRoot
 if ($LASTEXITCODE -ne 0) { throw 'Failed to install the local workflow package' }
-& $venvPython (Join-Path $PSScriptRoot 'scripts\bootstrap.py') --root $PSScriptRoot --workspace --check
+& $venvPython (Join-Path $PSScriptRoot 'scripts\bootstrap.py') --root $PSScriptRoot --check
 if ($LASTEXITCODE -ne 0) { throw 'Workspace verification failed' }
 Write-Output 'SETUP PASS: activate with .\.venv\Scripts\Activate.ps1; runtime data is in .\workspace'
 Write-Output 'CODEX NEXT: open this repository in Codex and send: 安装这个仓库并创建每日任务'

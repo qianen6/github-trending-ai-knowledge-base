@@ -11,4 +11,4 @@ Generate one structured `daily/YYYY-MM-DD.json` DailyEdition during ingest. Mark
 
 - Display selection no longer depends on parsing Markdown headings.
 - A failed promotion restores prior files and leaves no successful commit manifest.
-- Historical Markdown-only runs remain supported through a legacy adapter.
+- Historical runs are migrated to DailyEdition before the old layout is removed.

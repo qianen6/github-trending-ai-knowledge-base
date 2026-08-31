@@ -49,13 +49,16 @@ class ReadmeLocalizationTests(unittest.TestCase):
     def test_translation_validator_and_detail_embedding(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            data = root / "workspace"
+            data.mkdir()
+            (data / ".kb-workspace").write_text("test\n", encoding="utf-8")
             for name in ("daily", "repos", "readmes", "site", "incoming", "evaluations"):
-                (root / name).mkdir(parents=True, exist_ok=True)
+                (data / name).mkdir(parents=True, exist_ok=True)
 
             full_name = "example/project"
             slug = "example__project"
             source_sha256 = "a" * 64
-            translation_path = root / "readmes" / f"{slug}.zh-CN.md"
+            translation_path = data / "readmes" / f"{slug}.zh-CN.md"
             translation_path.write_text(translation_text(full_name, source_sha256), encoding="utf-8")
             translation_sha256 = hashlib.sha256(translation_path.read_bytes()).hexdigest()
             translation_raw = translation_path.read_text(encoding="utf-8")
@@ -78,7 +81,7 @@ class ReadmeLocalizationTests(unittest.TestCase):
                     }
                 ],
             }
-            (root / "readmes" / "manifest.json").write_text(
+            (data / "readmes" / "manifest.json").write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
             card = (
@@ -96,7 +99,7 @@ class ReadmeLocalizationTests(unittest.TestCase):
                 "## Trending表现与综合评分\n\n示例评分。\n\n"
                 "## 项目链接\n\nhttps://github.com/example/project\n"
             )
-            (root / "repos" / f"{slug}.md").write_text(card, encoding="utf-8")
+            (data / "repos" / f"{slug}.md").write_text(card, encoding="utf-8")
             catalog = {
                 "schema_version": 4,
                 "updated_at": "2026-08-30",
@@ -110,17 +113,43 @@ class ReadmeLocalizationTests(unittest.TestCase):
                     }
                 ],
             }
-            (root / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
-            (root / "index.md").write_text("# 索引\n", encoding="utf-8")
-            (root / "daily" / "2026-08-30.md").write_text(
+            (data / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+            (data / "index.md").write_text("# 索引\n", encoding="utf-8")
+            (data / "daily" / "2026-08-30.md").write_text(
                 "# 日报\n\n## 日榜精选\n\n### example/project\n\n示例。\n\n## 周榜精选\n\n## 月榜精选\n",
                 encoding="utf-8",
             )
-            (root / "incoming" / "2026-08-30.json").write_text(
+            (data / "daily" / "2026-08-30.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "knowledge_base_schema_version": 4,
+                        "date": "2026-08-30",
+                        "stats": {"pages": 21, "raw_candidates": 1, "evaluated": 1, "accepted": 1, "rejected": 0, "newly_accepted": 1, "catalog_entries": 1},
+                        "featured": {"daily": [full_name], "weekly": [], "monthly": []},
+                        "displayed_projects": [full_name],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (data / "incoming" / "2026-08-30.json").write_text(
                 json.dumps({"pages": [], "candidate_pool": {"raw_candidate_count": 1}}), encoding="utf-8"
             )
-            (root / "evaluations" / "2026-08-30.json").write_text(
-                json.dumps({"entries": []}), encoding="utf-8"
+            (data / "evaluations" / "2026-08-30.json").write_text(
+                json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "full_name": full_name,
+                                "final": {"status": "accepted", "grade": "A", "score": 80},
+                                "trend": {"score": 75, "components": {"daily_percentile": 100}, "periods_present": ["daily"]},
+                                "quality": {"total": 80},
+                                "value": {"total": 80},
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
             )
 
             validate = subprocess.run(
@@ -139,7 +168,7 @@ class ReadmeLocalizationTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            detail = (root / "site" / "repos" / f"{slug}.html").read_text(encoding="utf-8")
+            detail = (data / "site" / "repos" / f"{slug}.html").read_text(encoding="utf-8")
             self.assertIn('id="chinese-readme"', detail)
             self.assertIn("面向中文读者整理的项目说明", detail)
             self.assertIn("<pre><code", detail)

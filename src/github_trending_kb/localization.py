@@ -88,18 +88,10 @@ def featured_names(root: Path) -> set[str]:
     layout = WorkspaceLayout.discover(root)
     data_root = layout.data_root
     names: set[str] = set()
-    structured_dates: set[str] = set()
     for path in sorted((data_root / "daily").glob("*.json")):
         edition = read_json(path)
         validate_daily_edition(edition)
         names.update(edition["displayed_projects"])
-        structured_dates.add(path.stem)
-    # Legacy adapter: historical repositories may only have Markdown daily files.
-    for path in sorted((data_root / "daily").glob("*.md")):
-        if path.stem in structured_dates:
-            continue
-        text = path.read_text(encoding="utf-8")
-        names.update(re.findall(r"^### (.+?)\s*$", text, re.M))
     return names
 
 

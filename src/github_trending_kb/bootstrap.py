@@ -28,13 +28,11 @@ DIRECTORIES = (
 )
 
 
-def initialize(root: Path, *, isolated: bool = False) -> WorkspaceLayout:
-    layout = WorkspaceLayout.initialize(root, isolated=isolated)
+def initialize(root: Path) -> WorkspaceLayout:
+    layout = WorkspaceLayout.initialize(root)
     for relative in DIRECTORIES:
         path = layout.path(relative)
         path.mkdir(parents=True, exist_ok=True)
-        if relative not in {"trending/html", "trending/evidence", "proof"}:
-            (path / ".gitkeep").touch(exist_ok=True)
     if not layout.catalog.exists():
         layout.catalog.write_text(
             json.dumps(
@@ -119,16 +117,11 @@ def main() -> int:
         "--root", type=Path, default=Path(__file__).resolve().parents[2]
     )
     parser.add_argument(
-        "--workspace",
-        action="store_true",
-        help="store mutable runtime data below workspace/",
-    )
-    parser.add_argument(
         "--check", action="store_true", help="build and run all validators/tests"
     )
     args = parser.parse_args()
     root = args.root.resolve()
-    layout = initialize(root, isolated=args.workspace)
+    layout = initialize(root)
     validate_codex_daily_task(root)
     print(f"BOOTSTRAP PASS root={root} data_root={layout.data_root}")
     if args.check:

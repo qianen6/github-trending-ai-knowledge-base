@@ -40,9 +40,6 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
                 "card": f"repos/{name.replace('/', '__')}.md",
             }
         )
-        for legacy_key in ("ai_value_score", "ai_level", "research_gate", "engineering_gate", "license_risk_tags"):
-            entry.pop(legacy_key, None)
-        entry.pop("readme_zh", None)
         by_name[name] = entry
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -141,7 +138,7 @@ def render_index(root: Path, catalog: dict[str, Any]) -> None:
         else:
             lines.extend(["| 仓库 | 等级 | F | T | Q | V |", "|---|---:|---:|---:|---:|---:|"])
             for entry in entries:
-                value_score = entry.get("value_score", entry.get("ai_value_score", 0))
+                value_score = entry["value_score"]
                 lines.append(
                     f"| [{entry['full_name']}]({entry['card']}) | {entry['grade']} | {entry['final_score']} | "
                     f"{entry['trend_score']} | {entry['quality_score']} | {value_score} |"

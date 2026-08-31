@@ -140,8 +140,7 @@ def grade(score: float) -> str | None:
 
 
 def evaluation_value(evaluation: dict[str, Any]) -> dict[str, Any]:
-    """Return the v3 project-value block, with v2 compatibility for stored history."""
-    return evaluation.get("value") or evaluation["ai_value"]
+    return evaluation["value"]
 
 
 def primary_period(evaluation: dict[str, Any]) -> str:

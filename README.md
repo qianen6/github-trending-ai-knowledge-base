@@ -69,14 +69,14 @@ workspace/site/index.html
 3. 每天到点后，确定性采集Module先保存21页原始HTML、哈希与证据缓存；Codex再完成静态核验、卡片生成和README汉化。
 4. DailyEdition固定榜单和README覆盖集合，整次发布通过事务manifest后生成站点；打开 `workspace/site/index.html` 查看结果。
 
-所有高风险中间写入都先落到 `proof/run-YYYY-MM-DD/` 草稿；卡片、README和站点关卡通过后才写入正式产物。
+所有高风险中间写入都先落到 `workspace/proof/run-YYYY-MM-DD/` 草稿；卡片、README和站点关卡通过后才写入正式产物。
 
 ## 固定验证顺序
 
-当 `incoming/YYYY-MM-DD.json` 和前端 README 已由代理生成后，确定性阶段按以下顺序运行：
+当 `workspace/incoming/YYYY-MM-DD.json` 和前端 README 已由代理生成后，确定性阶段按以下顺序运行：
 
 ```powershell
-$dataRoot = if (Test-Path workspace/.kb-workspace) { "workspace" } else { "." }
+$dataRoot = "workspace"
 python scripts/trending_engine.py validate-cards --root . --input "$dataRoot/proof/run-YYYY-MM-DD/incoming.candidate.json"
 python scripts/trending_engine.py ingest --root . --input "$dataRoot/incoming/YYYY-MM-DD.json"
 python scripts/readme_translations.py validate --root .
@@ -112,23 +112,25 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 目录结构
 
 ```text
-incoming/       每日原子输入
-evaluations/    全部候选评分
-rejections/     淘汰记录
-repos/          中文项目卡片
-readmes/        前端项目中文README
-daily/          每日日报
-trending/       规范化页面与历史快照
-site/           离线HTML站点
-proof/          本地抓取、草稿和回滚证明（默认不提交）
 src/github_trending_kb/  可导入的核心Module
-workspace/      新安装默认使用的隔离运行数据根目录
+scripts/                 CLI Adapter
+schemas/                 输入契约
+tests/                   自动测试
+workspace/               唯一运行数据根目录（默认不提交）
+  incoming/              每日原子输入
+  evaluations/           全部候选评分
+  rejections/            淘汰记录
+  repos/                 中文项目卡片
+  readmes/               前端项目中文README
+  daily/                 DailyEdition与日报
+  trending/              原始页面、证据和历史快照
+  site/                  离线HTML站点
+  proof/                 草稿与回滚证明
 ```
 
-旧版本直接把运行数据放在仓库根目录；当前脚本保留该布局Adapter，不要求立即迁移历史数据。
 
 ## 数据与发布边界
 
 GitHub 没有公开完整 Trending 算法。本项目保存和分析的是官方 Trending 页面中可见的候选集合，不代表 GitHub 全站排名，也不声称项目已经安装运行或适合生产采用。
 
-本仓库默认不包含历史运行数据。若要分享自己的每日知识库，可以选择提交 `incoming/`、`evaluations/`、`repos/`、`readmes/`、`daily/`、`site/` 和 `trending/snapshots/`；原始页面、证据缓存和密钥应留在本地。
+本仓库默认不包含历史运行数据。若要分享自己的每日知识库，可以选择发布 `workspace/incoming/`、`workspace/evaluations/`、`workspace/repos/`、`workspace/readmes/`、`workspace/daily/`、`workspace/site/` 和 `workspace/trending/snapshots/`；原始页面、证据缓存和密钥应留在本地。

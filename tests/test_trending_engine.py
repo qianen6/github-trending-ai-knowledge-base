@@ -195,9 +195,13 @@ class TrendingEngineTests(unittest.TestCase):
     def test_trending_scores_are_immediate_and_hot_types_are_retained(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            for name in ("README.md", "WORKFLOW.md", "SCREENING_RULES.md", "index.md"):
+            for name in ("README.md", "WORKFLOW.md", "SCREENING_RULES.md"):
                 (root / name).write_text("test\n", encoding="utf-8")
-            (root / "catalog.json").write_text(
+            data = root / "workspace"
+            data.mkdir()
+            (data / ".kb-workspace").write_text("test\n", encoding="utf-8")
+            (data / "index.md").write_text("test\n", encoding="utf-8")
+            (data / "catalog.json").write_text(
                 json.dumps({"schema_version": 3, "updated_at": "2026-08-27", "entries": []}), encoding="utf-8"
             )
             payload = {
@@ -222,14 +226,14 @@ class TrendingEngineTests(unittest.TestCase):
             self.assertEqual(summary["candidates"], 2)
             self.assertEqual(summary["newly_accepted"], summary["accepted"])
             self.assertGreater(summary["committed_files"], 0)
-            edition = json.loads((root / "daily/2026-08-27.json").read_text(encoding="utf-8"))
+            edition = json.loads((data / "daily/2026-08-27.json").read_text(encoding="utf-8"))
             self.assertEqual(edition["schema_version"], 1)
             self.assertEqual(edition["displayed_projects"], [
                 name for period in engine.PERIOD_ORDER for name in edition["featured"][period]
             ])
             validation = engine.validate_root(root)
             self.assertEqual(validation["daily_editions"], 1)
-            entries = json.loads((root / "evaluations/2026-08-27.json").read_text(encoding="utf-8"))["entries"]
+            entries = json.loads((data / "evaluations/2026-08-27.json").read_text(encoding="utf-8"))["entries"]
             by_name = {entry["full_name"]: entry for entry in entries}
             self.assertEqual(by_name["example/new-hot"]["hot_type"], "NEW_HOT")
             self.assertEqual(by_name["example/revived-hot"]["hot_type"], "REVIVED_HOT")
