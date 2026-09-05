@@ -29,7 +29,8 @@ class ArchitectureModuleTests(unittest.TestCase):
 
     def test_workspace_is_the_only_runtime_data_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            # Windows hosted runners may expose TEMP through an 8.3 alias.
+            root = Path(temp).resolve()
             layout = initialize(root)
             self.assertEqual(layout.data_root, root / "workspace")
             self.assertTrue((root / "workspace/.kb-workspace").is_file())
