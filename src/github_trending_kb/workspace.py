@@ -31,7 +31,13 @@ class WorkspaceLayout:
         return cls.discover(project_root)
 
     def path(self, relative: str | Path) -> Path:
-        return self.data_root / relative
+        rel = Path(relative)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"workspace path must be relative: {relative}")
+        path = self.data_root / rel
+        if not path.resolve().is_relative_to(self.data_root.resolve()):
+            raise ValueError(f"workspace path escapes data root: {relative}")
+        return path
 
     @property
     def state_root(self) -> Path:

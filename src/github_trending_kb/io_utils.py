@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+
 def parse_date(value: str) -> date:
     return date.fromisoformat(value[:10])
 
@@ -18,25 +19,29 @@ def parse_datetime(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def atomic_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", newline="\n", delete=False,
-        dir=path.parent, prefix=path.name + ".", suffix=".tmp"
-    ) as handle:
-        handle.write(text)
-        tmp = Path(handle.name)
-    os.replace(tmp, path)
-
-
 def atomic_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="wb", delete=False, dir=path.parent, prefix=path.name + ".", suffix=".tmp"
-    ) as handle:
-        handle.write(payload)
-        tmp = Path(handle.name)
-    os.replace(tmp, path)
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            delete=False,
+            dir=path.parent,
+            prefix=path.name + ".",
+            suffix=".tmp",
+        ) as handle:
+            temp = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
+
+
+def atomic_text(path: Path, text: str) -> None:
+    atomic_bytes(path, text.encode("utf-8"))
 
 
 def atomic_json(path: Path, payload: Any) -> None:

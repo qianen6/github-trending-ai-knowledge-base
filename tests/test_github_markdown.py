@@ -25,9 +25,16 @@ class GitHubMarkdownTests(unittest.TestCase):
 <video src="./demo.mp4" controls></video>
 <script>alert(1)</script>
 </details>
+
+[部署说明][deploy]
+
+[deploy]: ./docs/deploy.md
+[badge]: ./assets/badge.svg
 """
         absolute = absolutize_markdown_links(source, "example/project", "main", "README.md")
         self.assertIn("raw.githubusercontent.com/example/project/main/assets/demo.png", absolute)
+        self.assertIn("https://github.com/example/project/blob/main/docs/deploy.md", absolute)
+        self.assertIn("https://github.com/example/project/blob/main/assets/badge.svg", absolute)
         html = render_markdown(absolute)
         self.assertIn("<details", html)
         self.assertIn("<video", html)

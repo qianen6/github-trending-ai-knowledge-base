@@ -4,8 +4,18 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .domain import COMMON_HARD_GATES, FINAL_PASS, NEW_HOT_DAYS, PERIOD_ORDER, QUALITY_PASS, TREND_PASS, VALID_PERIODS, VALUE_PASS
+from .domain import (
+    COMMON_HARD_GATES,
+    FINAL_PASS,
+    NEW_HOT_DAYS,
+    PERIOD_ORDER,
+    QUALITY_PASS,
+    TREND_PASS,
+    VALID_PERIODS,
+    VALUE_PASS,
+)
 from .io_utils import parse_date, parse_datetime, read_json
+
 
 def percentile_map(values: dict[str, int | None]) -> dict[str, float]:
     known = [(name, value) for name, value in values.items() if value is not None]
@@ -67,21 +77,35 @@ def previous_snapshot(root: Path, capture_date: date) -> dict[str, Any] | None:
     return read_json(previous[-1], {}) if previous else None
 
 
-def compute_trend(root: Path, capture_date: date, consolidated: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def compute_trend(
+    root: Path, capture_date: date, consolidated: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
     period_values: dict[str, dict[str, int | None]] = {}
     for period in VALID_PERIODS:
         period_values[period] = {}
         for name, item in consolidated.items():
-            values = [a["period_stars"] for a in item["appearances"] if a["period"] == period and a["period_stars"] is not None]
+            values = [
+                a["period_stars"]
+                for a in item["appearances"]
+                if a["period"] == period and a["period_stars"] is not None
+            ]
             period_values[period][name] = max(values) if values else None
-    percentiles = {period: percentile_map(values) for period, values in period_values.items()}
+    percentiles = {
+        period: percentile_map(values) for period, values in period_values.items()
+    }
 
     previous = previous_snapshot(root, capture_date)
-    previous_items = {item["full_name"]: item for item in previous.get("repositories", [])} if previous else {}
+    previous_items = (
+        {item["full_name"]: item for item in previous.get("repositories", [])}
+        if previous
+        else {}
+    )
     output = {}
     for name, item in consolidated.items():
         current_rank = average_rank(item)
-        prior_rank = average_rank(previous_items[name]) if name in previous_items else None
+        prior_rank = (
+            average_rank(previous_items[name]) if name in previous_items else None
+        )
         if current_rank is None or prior_rank is None:
             rank_score = 50.0
         else:
@@ -106,11 +130,17 @@ def compute_trend(root: Path, capture_date: date, consolidated: dict[str, dict[s
             "score": round(score, 2),
             "pass": score >= TREND_PASS,
             "components": components,
-            "period_stars": {period: period_values[period][name] for period in sorted(VALID_PERIODS)},
+            "period_stars": {
+                period: period_values[period][name] for period in sorted(VALID_PERIODS)
+            },
             "appearance_count": len(item["appearances"]),
             "periods_present": sorted(periods_present),
-            "average_rank": round(current_rank, 2) if current_rank is not None else None,
-            "previous_average_rank": round(prior_rank, 2) if prior_rank is not None else None,
+            "average_rank": (
+                round(current_rank, 2) if current_rank is not None else None
+            ),
+            "previous_average_rank": (
+                round(prior_rank, 2) if prior_rank is not None else None
+            ),
         }
     return output
 
@@ -160,7 +190,9 @@ def primary_period(evaluation: dict[str, Any]) -> str:
     )
 
 
-def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) -> dict[str, Any]:
+def evaluate(
+    repo: dict[str, Any], trend: dict[str, Any], capture_date: date
+) -> dict[str, Any]:
     common_pass, failures = hard_filter(repo)
     age_days = (capture_date - parse_datetime(repo["created_at"]).date()).days
     hot_type = "NEW_HOT" if age_days <= NEW_HOT_DAYS else "REVIVED_HOT"
@@ -180,17 +212,30 @@ def evaluate(repo: dict[str, Any], trend: dict[str, Any], capture_date: date) ->
         stage = "value"
         reasons = [f"value_score_below_{VALUE_PASS}"]
 
-    final_score = round(trend["score"] * 0.20 + repo["quality"]["total"] * 0.45 + repo["value"]["total"] * 0.35, 2)
+    final_score = round(
+        trend["score"] * 0.20
+        + repo["quality"]["total"] * 0.45
+        + repo["value"]["total"] * 0.35,
+        2,
+    )
     final_grade = grade(final_score)
     if stage is None and final_grade is None:
         stage = "final"
         reasons = [f"final_score_below_{FINAL_PASS:g}"]
 
-    evidence = sorted(set(repo["evidence_urls"] + repo["license"]["evidence_urls"] + repo["quality"]["evidence_urls"] + repo["value"]["evidence_urls"]))
+    evidence = sorted(
+        set(
+            repo["evidence_urls"]
+            + repo["license"]["evidence_urls"]
+            + repo["quality"]["evidence_urls"]
+            + repo["value"]["evidence_urls"]
+        )
+    )
     return {
         "full_name": repo["full_name"],
         "url": repo["url"],
         "category": repo["category"],
+        "language": repo.get("language"),
         "hot_type": hot_type,
         "repository_age_days": age_days,
         "hard_filter": {

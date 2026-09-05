@@ -61,3 +61,7 @@ When the user says `安装这个仓库并创建每日任务`, asks to install/in
 - Static-review scope is a knowledge-base judgment boundary, not a project limitation.
 
 Never generate card prose from category, programming language, directory presence, test presence, CI presence, score level, or Stars. Never reuse identical `features` or `strengths` arrays across repositories.
+
+## Verified staged publication
+
+Prefer the v5.1 prepare/publish workflow in WORKFLOW.md. Prepare ingests into the returned staging_root; derive README coverage from its DailyEdition and bind raw snapshots with source_artifact. Publish validates data, translations and the staged site before the publication transaction commits. Keep all semantic card checks and the fixed 21-page collection. The static all-project catalog does not expand localized README coverage. Archive only verified old rollback-test copies; keep original sources and active manifest references.

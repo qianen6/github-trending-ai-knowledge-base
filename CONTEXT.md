@@ -17,6 +17,7 @@ This repository turns the fixed official GitHub Trending matrix into a reproduci
 - **Displayed project** — a project referenced by a DailyEdition and therefore requiring a localized README.
 - **Localized README** — a source-hash-bound Chinese copy or faithful translation of the displayed project's official README.
 - **Publication transaction** — the staged set of run artifacts promoted together after validation.
+- **Daily run** — a resumable sequence with fingerprinted stages; prepare isolates ingest, and publish validates and promotes the complete generation.
 - **Project root** — source code, rules, schemas, tests, and installation contracts.
 - **Workspace** — mutable captures, evidence, evaluations, catalog, reports, localized READMEs, and generated site.
 

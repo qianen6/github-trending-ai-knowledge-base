@@ -134,3 +134,10 @@ workspace/               唯一运行数据根目录（默认不提交）
 GitHub 没有公开完整 Trending 算法。本项目保存和分析的是官方 Trending 页面中可见的候选集合，不代表 GitHub 全站排名，也不声称项目已经安装运行或适合生产采用。
 
 本仓库默认不包含历史运行数据。若要分享自己的每日知识库，可以选择发布 `workspace/incoming/`、`workspace/evaluations/`、`workspace/repos/`、`workspace/readmes/`、`workspace/daily/`、`workspace/site/` 和 `workspace/trending/snapshots/`；原始页面、证据缓存和密钥应留在本地。
+
+## v5.1 优化
+
+- 全量 HTML 项目目录、离线筛选与详情章节跳转。
+- 发布恢复一致性、建站前置关卡、原文快照和译文代码结构检查。
+- 指纹驱动的渲染缓存与断点验证，旧演练副本可验证归档和恢复。
+- 推荐使用 `python scripts/run_daily.py prepare/publish` 进行整批发布；已有数据用 `python scripts/run_daily.py verify --root .`。详见 [WORKFLOW.md](WORKFLOW.md) 的 v5.1 章节。

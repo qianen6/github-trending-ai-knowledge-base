@@ -12,9 +12,18 @@ from markdown.extensions.toc import slugify_unicode
 MARKDOWN_LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)]+)\)")
 NESTED_IMAGE_LINK_RE = re.compile(r"\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r"(?P<prefix>\b(?:href|src)=[\"'])(?P<target>[^\"']+)(?P<suffix>[\"'])", re.I)
+REFERENCE_DEF_RE = re.compile(
+    r"^(?P<prefix>[ \t]{0,3}\[(?P<label>[^\]]+)\]:[ \t]*)(?P<target><[^>\n]+>|[^\s]+)(?P<suffix>[^\n]*)$",
+    re.M,
+)
+IMAGE_REFERENCE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\[(?P<label>[^\]]*)\]")
 
 def absolutize_markdown_links(body: str, full_name: str, branch: str, readme_path: str) -> str:
     base_dir = posixpath.dirname(readme_path)
+    image_reference_labels = {
+        (match.group("label") or match.group("alt")).strip().casefold()
+        for match in IMAGE_REFERENCE_RE.finditer(body)
+    }
 
     def absolute_target(target: str, image: bool) -> str:
         parts = urlsplit(target)
@@ -47,7 +56,17 @@ def absolutize_markdown_links(body: str, full_name: str, branch: str, readme_pat
         alt, image_target, link_target = match.groups()
         return f"[![{alt}]({absolute_target(image_target, True)})]({absolute_target(link_target, False)})"
 
-    normalized = NESTED_IMAGE_LINK_RE.sub(replace_nested, body)
+    def replace_reference(match: re.Match[str]) -> str:
+        raw_target = match.group("target")
+        target = raw_target.strip("<>")
+        if urlsplit(target).scheme or target.startswith(("#", "//")):
+            return match.group(0)
+        image = match.group("label").strip().casefold() in image_reference_labels
+        absolute = absolute_target(target, image)
+        return f"{match.group('prefix')}{absolute}{match.group('suffix')}"
+
+    normalized = REFERENCE_DEF_RE.sub(replace_reference, body)
+    normalized = NESTED_IMAGE_LINK_RE.sub(replace_nested, normalized)
     normalized = MARKDOWN_LINK_RE.sub(replace, normalized)
 
     def replace_html(match: re.Match[str]) -> str:

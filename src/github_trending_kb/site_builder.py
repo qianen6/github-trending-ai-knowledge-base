@@ -6,14 +6,27 @@ import json
 import re
 import shutil
 import uuid
+import tempfile
+import time
 from pathlib import Path
 
 from .domain import PERIOD_LABELS, PERIOD_ORDER
 from .edition import featured_evaluations, validate_daily_edition
 from .github_markdown import render_markdown
-from .localization import absolutize_markdown_links, split_translation
+from .catalog_view import CATALOG_CSS, CATALOG_SCRIPT, catalog_body, detail_navigation
+from .render_cache import RenderCache
+from .site_validation import validate_site
+from .localization import (
+    absolutize_markdown_links,
+    split_translation,
+    validate_translations,
+)
 from .ranking import evaluation_value
-from .transaction import replace_directory_atomically
+from .transaction import (
+    replace_directory_atomically,
+    workspace_lock,
+    ArtifactTransaction,
+)
 from .workspace import WorkspaceLayout
 
 STYLE = r"""
@@ -141,14 +154,25 @@ h3 { font-size: 19px; margin: 0; }
 
 def inline(text: str) -> str:
     escaped = html.escape(text, quote=False)
-    escaped = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", lambda m: f'<img src="{html.escape(m.group(2), quote=True)}" alt="{html.escape(m.group(1), quote=True)}">', escaped)
-    escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", lambda m: f'<a href="{html.escape(m.group(2), quote=True)}">{m.group(1)}</a>', escaped)
+    escaped = re.sub(
+        r"!\[([^\]]*)\]\(([^)]+)\)",
+        lambda m: f'<img src="{html.escape(m.group(2), quote=True)}" alt="{html.escape(m.group(1), quote=True)}">',
+        escaped,
+    )
+    escaped = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        lambda m: f'<a href="{html.escape(m.group(2), quote=True)}">{m.group(1)}</a>',
+        escaped,
+    )
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
     return escaped
 
+
 def section(text: str, heading: str) -> str:
-    match = re.search(rf"^## {re.escape(heading)}\s*$\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    match = re.search(
+        rf"^## {re.escape(heading)}\s*$\n(.*?)(?=^## |\Z)", text, re.M | re.S
+    )
     return match.group(1).strip() if match else ""
 
 
@@ -157,7 +181,11 @@ def first_paragraph(text: str) -> str:
 
 
 def page(title: str, body: str, latest_date: str | None, prefix: str = "") -> str:
-    latest_link = f'<a href="{prefix}daily/{latest_date}.html">最新日报</a>' if latest_date else ""
+    latest_link = (
+        f'<a href="{prefix}daily/{latest_date}.html">最新日报</a>'
+        if latest_date
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -170,7 +198,7 @@ def page(title: str, body: str, latest_date: str | None, prefix: str = "") -> st
 <body>
   <header class="topbar"><nav class="shell nav">
     <a class="brand" href="{prefix}index.html">GitHub Trending</a>
-    <div class="navlinks"><a href="{prefix}index.html">首页</a>{latest_link}<a href="{prefix}../index.md">Markdown Wiki</a><a href="https://github.com/trending?since=weekly">数据源</a></div>
+    <div class="navlinks"><a href="{prefix}index.html">首页</a>{latest_link}<a href="{prefix}catalog.html">全部项目</a><a href="{prefix}../index.md">Markdown Wiki</a><a href="https://github.com/trending?since=weekly">数据源</a></div>
   </nav></header>
   {body}
   <footer class="footer"><div class="shell">本地静态知识站 · Markdown Wiki同步生成 · 候选来自GitHub Trending</div></footer>
@@ -199,9 +227,15 @@ def normalized_entry(item: dict) -> dict:
     }
 
 
-def period_sections(featured: dict[str, list[dict]], one_line: dict[str, str], link_prefix: str) -> str:
+def period_sections(
+    featured: dict[str, list[dict]], one_line: dict[str, str], link_prefix: str
+) -> str:
     groups = []
-    notes = {"daily": "短期突然升温", "weekly": "一周持续增长", "monthly": "月度稳定关注"}
+    notes = {
+        "daily": "短期突然升温",
+        "weekly": "一周持续增长",
+        "monthly": "月度稳定关注",
+    }
     for period in PERIOD_ORDER:
         items = []
         for item in featured[period]:
@@ -221,26 +255,29 @@ def period_sections(featured: dict[str, list[dict]], one_line: dict[str, str], l
     return "".join(groups)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, required=True)
-    args = parser.parse_args()
-    project_root = args.root.resolve()
+def _build_site(project_root: Path, site: Path, use_cache: bool) -> dict:
+    started = time.perf_counter()
+    validate_translations(project_root)
     layout = WorkspaceLayout.discover(project_root)
     root = layout.data_root
     final_site = root / "site"
-    site = layout.state_root / "site-staging" / uuid.uuid4().hex
-    shutil.rmtree(site, ignore_errors=True)
+    cache = RenderCache(layout.state_root / "render-cache", enabled=use_cache)
     (site / "daily").mkdir(parents=True, exist_ok=True)
     (site / "repos").mkdir(parents=True, exist_ok=True)
-    (site / "style.css").write_text(STYLE.strip() + "\n", encoding="utf-8")
+    (site / "style.css").write_text(
+        STYLE.strip() + "\n" + CATALOG_CSS, encoding="utf-8"
+    )
 
     catalog = json.loads((root / "catalog.json").read_text(encoding="utf-8"))
     readme_manifest_path = root / "readmes" / "manifest.json"
     readme_entries = {}
     if readme_manifest_path.is_file():
-        readme_manifest = json.loads(readme_manifest_path.read_text(encoding="utf-8-sig"))
-        readme_entries = {entry["full_name"]: entry for entry in readme_manifest.get("entries", [])}
+        readme_manifest = json.loads(
+            readme_manifest_path.read_text(encoding="utf-8-sig")
+        )
+        readme_entries = {
+            entry["full_name"]: entry for entry in readme_manifest.get("entries", [])
+        }
     daily_files = sorted((root / "daily").glob("*.md"), reverse=True)
     latest_date = daily_files[0].stem if daily_files else None
     md_by_name = {}
@@ -253,7 +290,9 @@ def main() -> None:
         if name in readme_entries:
             readme_entry = readme_entries[name]
             readme_path = root / readme_entry["translation"]
-            _, readme_body = split_translation(readme_path.read_text(encoding="utf-8-sig"))
+            _, readme_body = split_translation(
+                readme_path.read_text(encoding="utf-8-sig")
+            )
             readme_body = absolutize_markdown_links(
                 readme_body,
                 name,
@@ -261,26 +300,51 @@ def main() -> None:
                 readme_entry["source_path"],
             )
             localized_html = (
-                '<section class="localized-readme" id="chinese-readme">'
+                f'<section class="localized-readme" id="chinese-readme" data-source-sha256="{readme_entry["source_sha256"]}" data-translation-sha256="{readme_entry["translation_sha256"]}">'
                 '<div class="localized-readme-head"><h2>中文 README</h2>'
                 f'<p>官方 README 的中文直译 · <a href="{html.escape(readme_entry["source_url"], quote=True)}">查看原文</a></p></div>'
-                f'<div class="localized-readme-body">{render_markdown(readme_body)}</div></section>'
+                f'<div class="localized-readme-body">{cache.render(readme_body)}</div></section>'
             )
         md_by_name[name] = text
         one_line[name] = first_paragraph(section(text, "一句话介绍"))
         back_href = f"../daily/{latest_date}.html" if latest_date else "../index.html"
         back_label = "返回最新日报" if latest_date else "返回首页"
-        detail_body = f'<main><article class="reading prose"><a class="back" href="{back_href}">← {back_label}</a>{render_markdown(text)}{localized_html}</article></main>'
-        (site / "repos" / f"{name.replace('/', '__')}.html").write_text(page(name, detail_body, latest_date, "../"), encoding="utf-8")
+        detail_body = f'<main><article class="reading prose"><a class="back" href="{back_href}">← {back_label}</a>{detail_navigation(cache.render(text), localized_html, entry)}</article></main>'
+        (site / "repos" / f"{name.replace('/', '__')}.html").write_text(
+            page(name, detail_body, latest_date, "../"), encoding="utf-8"
+        )
 
-    latest_stats_html = '<div class="stats">' + "".join(
-        f'<div class="stat"><strong>0</strong><span>{label}</span></div>'
-        for label in ("Trending页面", "去重候选", "通过筛选", "新增展示")
-    ) + "</div>"
-    latest_period_sections = period_sections({period: [] for period in PERIOD_ORDER}, one_line, "repos/")
+    languages = {}
+    for incoming_path in sorted(layout.incoming.glob("*.json")):
+        payload = json.loads(incoming_path.read_text(encoding="utf-8"))
+        for item in payload.get("repositories", []):
+            languages[item["full_name"]] = item.get("language") or "未标注"
+    (site / "catalog.html").write_text(
+        page(
+            "全部项目｜GitHub Trending",
+            catalog_body(catalog["entries"], one_line, languages),
+            latest_date,
+        ),
+        encoding="utf-8",
+    )
+    (site / "catalog.js").write_text(CATALOG_SCRIPT, encoding="utf-8")
+
+    latest_stats_html = (
+        '<div class="stats">'
+        + "".join(
+            f'<div class="stat"><strong>0</strong><span>{label}</span></div>'
+            for label in ("Trending页面", "去重候选", "通过筛选", "新增展示")
+        )
+        + "</div>"
+    )
+    latest_period_sections = period_sections(
+        {period: [] for period in PERIOD_ORDER}, one_line, "repos/"
+    )
     for daily_path in daily_files:
         report_date = daily_path.stem
-        evaluation = json.loads((root / f"evaluations/{report_date}.json").read_text(encoding="utf-8"))
+        evaluation = json.loads(
+            (root / f"evaluations/{report_date}.json").read_text(encoding="utf-8")
+        )
         edition_path = root / "daily" / f"{report_date}.json"
         if not edition_path.is_file():
             raise ValueError(f"missing DailyEdition: {edition_path}")
@@ -294,7 +358,14 @@ def main() -> None:
             (str(edition_stats["accepted"]), "通过筛选"),
             (str(len(edition["displayed_projects"])), "新增展示"),
         ]
-        stats_html = "<div class=\"stats\">" + "".join(f'<div class="stat"><strong>{value}</strong><span>{label}</span></div>' for value, label in stats) + "</div>"
+        stats_html = (
+            '<div class="stats">'
+            + "".join(
+                f'<div class="stat"><strong>{value}</strong><span>{label}</span></div>'
+                for value, label in stats
+            )
+            + "</div>"
+        )
         if report_date == latest_date:
             latest_stats_html = stats_html
             latest_period_sections = period_sections(featured, one_line, "repos/")
@@ -305,11 +376,22 @@ def main() -> None:
           <p class="lede">从完整Trending页面中筛出值得进一步了解的项目；同一仓库只收录一次，并按最强趋势归入日榜、周榜或月榜。</p>
           {stats_html}{groups}
         </div></main>"""
-        (site / "daily" / f"{report_date}.html").write_text(page(f"GitHub Trending 项目日报｜{report_date}", daily_body, latest_date, "../"), encoding="utf-8")
+        (site / "daily" / f"{report_date}.html").write_text(
+            page(
+                f"GitHub Trending 项目日报｜{report_date}",
+                daily_body,
+                latest_date,
+                "../",
+            ),
+            encoding="utf-8",
+        )
 
-    history = "".join(f'<li><a href="daily/{path.stem}.html">{path.stem}</a><span>查看日报</span></li>' for path in daily_files)
+    history = "".join(
+        f'<li><a href="daily/{path.stem}.html">{path.stem}</a><span>查看日报</span></li>'
+        for path in daily_files
+    )
     if not history:
-        history = '<li><span>尚未生成日报</span><span>等待首次采集</span></li>'
+        history = "<li><span>尚未生成日报</span><span>等待首次采集</span></li>"
     home_body = f"""<main><div class="shell">
       <div class="eyebrow">Local Knowledge Base</div>
       <h1>GitHub Trending 项目知识库</h1>
@@ -318,9 +400,37 @@ def main() -> None:
       {latest_period_sections}
       <section><div class="section-head"><h2>历史日报</h2><p>按日期倒序</p></div><ul class="history">{history}</ul></section>
     </div></main>"""
-    (site / "index.html").write_text(page("GitHub Trending 项目知识库", home_body, latest_date), encoding="utf-8")
+    (site / "index.html").write_text(
+        page("GitHub Trending 项目知识库", home_body, latest_date), encoding="utf-8"
+    )
+    validate_site(project_root, site)
     replace_directory_atomically(site, final_site, layout.state_root / "backups")
-    print(f"SITE PASS project_pages={len(catalog['entries'])} daily_pages={len(daily_files)}")
+    return dict(
+        project_pages=len(catalog["entries"]),
+        daily_pages=len(daily_files),
+        render_cache_hits=cache.hits,
+        rendered=cache.misses,
+        elapsed_seconds=round(time.perf_counter() - started, 3),
+    )
+
+
+def build_site(project_root: Path, use_cache: bool = True) -> dict:
+    layout = WorkspaceLayout.discover(project_root)
+    staging = layout.state_root / "site-staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    with workspace_lock(layout):
+        ArtifactTransaction._recover(layout)
+        with tempfile.TemporaryDirectory(dir=staging) as temp:
+            return _build_site(project_root.resolve(), Path(temp) / "site", use_cache)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--no-cache", action="store_true")
+    args = parser.parse_args()
+    result = build_site(args.root, use_cache=not args.no_cache)
+    print("SITE PASS " + " ".join(f"{k}={v}" for k, v in result.items()))
 
 
 if __name__ == "__main__":

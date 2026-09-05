@@ -108,3 +108,54 @@ workspace/trending/html + workspace/trending/evidence + workspace/proof/run-YYYY
 10. 当日DailyEdition通过验证，且最新publication manifest中的文件哈希全部匹配。
 
 日报只呈现今日概览以及日榜、周榜、月榜精选；淘汰原因保存在 `rejections/`，不在读者页面展示。
+
+## v5.1：可靠发布、全库目录与可恢复运行
+
+- `workspace/site/catalog.html` 提供全部收录项目的静态目录、关键词/分类/语言筛选；关闭 JavaScript 后仍可进入全部项目。
+- 项目详情提供章节跳转、最后评估时间和评分说明；新增目录不扩大中文 README 的必需覆盖集合。
+- 官方 README 原文按内容哈希保存在 `workspace/readmes/sources/<sha256>.md`，manifest 的 `source_artifact` 指向它。校验真实原文、source-copy 正文、译文代码块及标题结构，而非仅比较两个自报哈希。
+- build 入口自行执行 README 与暂存站点校验，失败保留旧站；内容哈希缓存复用未变的渲染片段，`--no-cache` 可做全量对照。
+- 采集复用检查文件、SHA-256、JSON 及有效期；默认官方仓库证据最多跨 1 天复用，`--evidence-max-age-days 0` 禁止跨日复用。错误 HTML 不再冒充空榜，合法空榜仍支持。
+- 发布恢复使用匹配的 transaction_id 判断清理或回滚；系统文件锁阻止活动写入被另一进程误恢复。
+
+### 推荐的整批发布入口
+
+卡片验收通过、正式 incoming 原子落盘后：
+
+```powershell
+python scripts/run_daily.py prepare --root . --input workspace/incoming/YYYY-MM-DD.json
+```
+
+输出的 `staging_root` 是本次隔离项目根目录；ingest 已在那里生成 DailyEdition。根据该目录中的榜单并集准备中文 README，并把匹配原文保存至其 `workspace/readmes/sources/`。原文快照也可通过：
+
+```powershell
+python scripts/readme_translations.py bind-sources --root STAGING_ROOT --source-dir STAGING_ROOT/workspace/proof/sources
+python scripts/readme_translations.py validate --root STAGING_ROOT
+python scripts/run_daily.py publish --root . --input workspace/incoming/YYYY-MM-DD.json
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+`prepare` 不覆盖正式目录或站点；`publish` 复用已准备且指纹一致的暂存数据，完成 README、build、engine、site 关卡后，把数据、译文与站点纳入同一 publication manifest。发布期间正式数据发生变化会中止晋升。若在正式工作区准备译文，可显式传 `--readmes-dir workspace/readmes`，避免误用旧的暂存译文。
+
+已有数据仅需重新验证与建站时：
+
+```powershell
+python scripts/run_daily.py verify --root .
+python scripts/run_daily.py verify --root . --no-resume
+```
+
+阶段输入和输出哈希相同才复用通过结果；失败状态、耗时及缓存结果记录于 `workspace/.kb-state/runs/`。网络采集、语义卡片撰写和翻译仍按证据逐项目完成，不由该命令推测生成。
+
+### 旧演练副本归档
+
+```powershell
+# 默认只列计划；日期之前的 run-YYYY-MM-DD/rollback-test 才进入候选。
+python scripts/manage_proof.py archive --root . --before YYYY-MM-DD
+python scripts/manage_proof.py archive --root . --before YYYY-MM-DD --apply
+
+# 恢复到一个尚不存在的工作区子目录。
+python scripts/manage_proof.py restore --root . --archive workspace/proof/run-DATE/rollback-test.zip --target workspace/proof/restored-DATE
+```
+
+归档先检查活动 manifest 引用，再压缩并逐文件验证 SHA-256；确认源文件在压缩期间未变化后才移除演练目录。原始 sources、采集证据、日报、正式数据和截止日后的演练副本保留。ZIP 与同目录 `rollback-test.archive.json` 必须一起保存。磁盘收益以实际输出 `saved_bytes` 为准。
+

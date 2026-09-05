@@ -89,20 +89,38 @@ def parse_number(text: str) -> int:
     if not match:
         return 0
     value, suffix = match.groups()
-    multiplier = {None: 1, "k": 1_000, "K": 1_000, "m": 1_000_000, "M": 1_000_000}[suffix]
+    multiplier = {None: 1, "k": 1_000, "K": 1_000, "m": 1_000_000, "M": 1_000_000}[
+        suffix
+    ]
     return int(float(value.replace(",", "")) * multiplier)
 
 
 def parse_trending_html(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     entries: list[dict] = []
-    for rank, article in enumerate(soup.select("article.Box-row"), start=1):
+    articles = soup.select("article.Box-row")
+    if not articles:
+        heading = soup.find("h1")
+        recognized = (
+            heading and "trending" in heading.get_text(" ", strip=True).casefold()
+        )
+        empty = re.search(
+            r"(?:we don['’]t have any trending repositories|no trending repositories found)",
+            soup.get_text(" ", strip=True),
+            re.I,
+        )
+        if recognized and empty:
+            return []
+        raise ValueError(
+            "unrecognized Trending HTML: neither repository rows nor a recognized empty board"
+        )
+    for rank, article in enumerate(articles, start=1):
         repo_link = article.select_one("h2 a[href]")
         if repo_link is None:
-            continue
+            raise ValueError(f"Trending row {rank} has no repository link")
         full_name = repo_link.get("href", "").strip("/")
         if full_name.count("/") != 1:
-            continue
+            raise ValueError(f"Trending row {rank} has an invalid repository name")
         description = article.select_one("p.col-9") or article.select_one("p")
         language = article.select_one('[itemprop="programmingLanguage"]')
         star_link = article.select_one(f'a[href="/{full_name}/stargazers"]')
@@ -110,7 +128,7 @@ def parse_trending_html(html: str) -> list[dict]:
         period_node = article.select_one("span.float-sm-right")
         built_by = [
             image.get("alt", "").lstrip("@")
-            for image in article.select('span.d-inline-block img[alt]')
+            for image in article.select("span.d-inline-block img[alt]")
             if image.get("alt")
         ]
         period_text = period_node.get_text(" ", strip=True) if period_node else ""
@@ -119,10 +137,22 @@ def parse_trending_html(html: str) -> list[dict]:
                 "rank": rank,
                 "full_name": full_name,
                 "url": f"https://github.com/{full_name}",
-                "description": description.get_text(" ", strip=True) if description else "",
-                "primary_language": language.get_text(" ", strip=True) if language else None,
-                "total_stars": parse_number(star_link.get_text(" ", strip=True)) if star_link else 0,
-                "total_forks": parse_number(fork_link.get_text(" ", strip=True)) if fork_link else 0,
+                "description": (
+                    description.get_text(" ", strip=True) if description else ""
+                ),
+                "primary_language": (
+                    language.get_text(" ", strip=True) if language else None
+                ),
+                "total_stars": (
+                    parse_number(star_link.get_text(" ", strip=True))
+                    if star_link
+                    else 0
+                ),
+                "total_forks": (
+                    parse_number(fork_link.get_text(" ", strip=True))
+                    if fork_link
+                    else 0
+                ),
                 "period_stars": parse_number(period_text) if period_text else None,
                 "built_by": built_by,
             }
@@ -139,12 +169,14 @@ class TrendingCollector:
         retries: int = 3,
         timeout: float = 30.0,
         retry_delay: float = 1.0,
+        evidence_max_age_days: int = 1,
     ) -> None:
         self.layout = WorkspaceLayout.discover(root)
         self.adapter = adapter or UrllibFetchAdapter()
         self.retries = retries
         self.timeout = timeout
         self.retry_delay = retry_delay
+        self.evidence_max_age_days = max(0, evidence_max_age_days)
         token = os.environ.get("GITHUB_TOKEN")
         self.headers = {
             "User-Agent": "github-trending-ai-knowledge-base/5",
@@ -165,18 +197,38 @@ class TrendingCollector:
         assert last is not None
         raise last
 
-    def collect_page(self, spec: TrendingPageSpec, capture_date: date, refresh: bool) -> dict:
+    def collect_page(
+        self, spec: TrendingPageSpec, capture_date: date, refresh: bool
+    ) -> dict:
         html_path = self.layout.path(
             Path("trending/html") / capture_date.isoformat() / f"{spec.slug}.html"
         )
         captured_at = datetime.now(timezone.utc).isoformat()
         try:
-            body = html_path.read_bytes() if html_path.is_file() and not refresh else self._fetch(spec.url)
-            if refresh or not html_path.is_file():
+            meta_path = html_path.with_suffix(".meta.json")
+            cached = False
+            if html_path.is_file() and not refresh:
+                try:
+                    raw = html_path.read_bytes()
+                    entries = parse_trending_html(raw.decode("utf-8", errors="replace"))
+                    if meta_path.is_file():
+                        metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+                        if metadata["sha256"] != hashlib.sha256(raw).hexdigest():
+                            raise ValueError("cached Trending HTML hash mismatch")
+                        captured_at = metadata["captured_at"]
+                    cached = True
+                except (OSError, ValueError, KeyError):
+                    pass
+            if not cached:
+                body = self._fetch(spec.url)
                 html_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_bytes(html_path, body)
             raw = html_path.read_bytes()
             entries = parse_trending_html(raw.decode("utf-8", errors="replace"))
+            atomic_json(
+                meta_path,
+                {"sha256": hashlib.sha256(raw).hexdigest(), "captured_at": captured_at},
+            )
             return {
                 "scope": spec.scope,
                 "period": spec.period,
@@ -194,7 +246,9 @@ class TrendingCollector:
                 "spoken_language": "any",
                 "source_url": spec.url,
                 "captured_at": captured_at,
-                "raw_sha256": hashlib.sha256(str(exc).encode()).hexdigest(),
+                "raw_sha256": hashlib.sha256(
+                    html_path.read_bytes() if html_path.is_file() else str(exc).encode()
+                ).hexdigest(),
                 "status": "failed",
                 "entries": [],
                 "_collection_error": f"{type(exc).__name__}: {exc}",
@@ -216,53 +270,110 @@ class TrendingCollector:
                 pages[spec.slug] = future.result()
         return [pages[spec.slug] for spec in specs]
 
-    def collect_evidence(self, full_name: str, capture_date: date, refresh: bool = False) -> dict:
+    def collect_evidence(
+        self, full_name: str, capture_date: date, refresh: bool = False
+    ) -> dict:
         slug = full_name.replace("/", "__")
-        base = self.layout.path(Path("trending/evidence") / capture_date.isoformat() / slug)
+        base = self.layout.path(
+            Path("trending/evidence") / capture_date.isoformat() / slug
+        )
         manifest_path = base / "manifest.json"
-        if manifest_path.is_file() and not refresh:
-            cached = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if all(record.get("status") == "success" for record in cached.get("records", [])):
-                return cached
-        if not refresh:
-            prior = sorted(
-                path
-                for path in self.layout.path("trending/evidence").glob(
-                    f"*/{slug}/manifest.json"
-                )
-                if path.parent.parent.name < capture_date.isoformat()
-            )
-            if prior:
-                cached = json.loads(prior[-1].read_text(encoding="utf-8"))
-                if all(record.get("status") == "success" for record in cached.get("records", [])):
-                    return {
-                        **cached,
-                        "reused": True,
-                        "reused_from": prior[-1].relative_to(self.layout.data_root).as_posix(),
-                    }
         endpoints = {
             "repository": f"https://api.github.com/repos/{full_name}",
             "readme": f"https://api.github.com/repos/{full_name}/readme",
             "license": f"https://api.github.com/repos/{full_name}/license",
             "root_contents": f"https://api.github.com/repos/{full_name}/contents",
         }
+        candidates = []
+        if not refresh:
+            paths = sorted(
+                self.layout.path("trending/evidence").glob(f"*/{slug}/manifest.json"),
+                reverse=True,
+            )
+            for path in paths:
+                try:
+                    cached_day = date.fromisoformat(path.parent.parent.name)
+                    if (
+                        not 0
+                        <= (capture_date - cached_day).days
+                        <= self.evidence_max_age_days
+                    ):
+                        continue
+                    cached = json.loads(path.read_text(encoding="utf-8"))
+                    rows = cached.get("records", [])
+                    if cached.get("full_name") != full_name or len(
+                        {r["kind"] for r in rows}
+                    ) != len(rows):
+                        continue
+                    candidates.extend((row, cached_day) for row in rows)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
         records = []
+        cache_hits = 0
         base.mkdir(parents=True, exist_ok=True)
         for label, url in endpoints.items():
+            reused = None
+            for record, cached_day in candidates:
+                try:
+                    if (
+                        record.get("kind") != label
+                        or record.get("url") != url
+                        or record.get("status") != "success"
+                    ):
+                        continue
+                    fetched_on = date.fromisoformat(
+                        record.get("fetched_on", cached_day.isoformat())
+                    )
+                    if (
+                        not 0
+                        <= (capture_date - fetched_on).days
+                        <= self.evidence_max_age_days
+                    ):
+                        continue
+                    cached_path = self.layout.path(record["path"])
+                    raw = cached_path.read_bytes()
+                    if hashlib.sha256(raw).hexdigest() != record.get("sha256"):
+                        continue
+                    json.loads(raw)
+                    reused = {**record, "fetched_on": fetched_on.isoformat()}
+                    break
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+            if reused is not None:
+                records.append(reused)
+                cache_hits += 1
+                continue
             try:
                 body = self._fetch(url)
+                json.loads(body)
                 path = base / f"{label}.json"
-                atomic_text(path, body.decode("utf-8", errors="replace"))
+                atomic_bytes(path, body)
                 records.append(
-                    {"kind": label, "url": url, "status": "success", "sha256": hashlib.sha256(body).hexdigest(), "path": path.relative_to(self.layout.data_root).as_posix()}
+                    {
+                        "kind": label,
+                        "url": url,
+                        "status": "success",
+                        "sha256": hashlib.sha256(body).hexdigest(),
+                        "path": path.relative_to(self.layout.data_root).as_posix(),
+                        "fetched_on": capture_date.isoformat(),
+                    }
                 )
             except Exception as exc:
-                records.append({"kind": label, "url": url, "status": "failed", "error": f"{type(exc).__name__}: {exc}"})
+                records.append(
+                    {
+                        "kind": label,
+                        "url": url,
+                        "status": "failed",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
         manifest = {
             "schema_version": 1,
             "full_name": full_name,
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "records": records,
+            "cache_hits": cache_hits,
+            "fetches": len(endpoints) - cache_hits,
         }
         atomic_json(manifest_path, manifest)
         return manifest
@@ -275,7 +386,9 @@ class TrendingCollector:
         evidence: bool = False,
         max_workers: int = 7,
     ) -> dict:
-        collected_pages = self.collect_pages(capture_date, refresh=refresh, max_workers=max_workers)
+        collected_pages = self.collect_pages(
+            capture_date, refresh=refresh, max_workers=max_workers
+        )
         failures = [
             {
                 "scope": page["scope"],
@@ -297,7 +410,9 @@ class TrendingCollector:
         if evidence:
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = {
-                    pool.submit(self.collect_evidence, name, capture_date, refresh): name
+                    pool.submit(
+                        self.collect_evidence, name, capture_date, refresh
+                    ): name
                     for name in names
                 }
                 for future in as_completed(futures):
@@ -319,6 +434,8 @@ class TrendingCollector:
                 for record in item.get("records", [])
             ),
             "failures": failures,
+            "cache_hits": sum(item.get("cache_hits", 0) for item in evidence_index),
+            "evidence_fetches": sum(item.get("fetches", 0) for item in evidence_index),
         }
         output = self.layout.path(
             Path("proof") / f"run-{capture_date.isoformat()}" / "collection.json"
@@ -328,14 +445,19 @@ class TrendingCollector:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Collect the fixed GitHub Trending matrix")
+    parser = argparse.ArgumentParser(
+        description="Collect the fixed GitHub Trending matrix"
+    )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--date", type=date.fromisoformat, default=date.today())
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--evidence", action="store_true")
     parser.add_argument("--workers", type=int, default=7)
+    parser.add_argument("--evidence-max-age-days", type=int, default=1)
     args = parser.parse_args()
-    result = TrendingCollector(args.root).collect(
+    result = TrendingCollector(
+        args.root, evidence_max_age_days=args.evidence_max_age_days
+    ).collect(
         args.date,
         refresh=args.refresh,
         evidence=args.evidence,

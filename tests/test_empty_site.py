@@ -20,7 +20,9 @@ class EmptySiteTests(unittest.TestCase):
             (data / ".kb-workspace").write_text("test\n", encoding="utf-8")
             for name in ("daily", "repos", "site"):
                 (data / name).mkdir(parents=True, exist_ok=True)
-            (data / "index.md").write_text("# GitHub Trending 项目索引\n\n尚未执行首次采集。\n", encoding="utf-8")
+            (data / "index.md").write_text(
+                "# GitHub Trending 项目索引\n\n尚未执行首次采集。\n", encoding="utf-8"
+            )
             (data / "catalog.json").write_text(
                 json.dumps(
                     {
@@ -38,7 +40,12 @@ class EmptySiteTests(unittest.TestCase):
                 encoding="utf-8",
             )
             build = subprocess.run(
-                [sys.executable, str(REPO_ROOT / "scripts" / "build_site.py"), "--root", str(root)],
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "build_site.py"),
+                    "--root",
+                    str(root),
+                ],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -49,13 +56,21 @@ class EmptySiteTests(unittest.TestCase):
             self.assertIn("暂无新增项目", home)
 
             validate = subprocess.run(
-                [sys.executable, str(REPO_ROOT / "scripts" / "validate_site.py"), "--root", str(root)],
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "validate_site.py"),
+                    "--root",
+                    str(root),
+                ],
                 check=False,
                 capture_output=True,
                 text=True,
             )
             self.assertEqual(validate.returncode, 0, validate.stderr)
-            self.assertIn("markdown_projects=0 readme_translations=0 daily_reports=0 html_pages=1 broken_links=0", validate.stdout)
+            self.assertIn(
+                "markdown_projects=0 readme_translations=0 daily_reports=0 html_pages=2 broken_links=0",
+                validate.stdout,
+            )
 
 
 if __name__ == "__main__":

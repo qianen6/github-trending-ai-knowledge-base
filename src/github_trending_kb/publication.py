@@ -9,7 +9,10 @@ from .edition import featured_evaluations, select_period_features
 from .io_utils import atomic_json, atomic_text, read_json
 from .ranking import evaluation_value, primary_period
 
-def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, Any]]) -> dict[str, Any]:
+
+def update_catalog(
+    root: Path, capture_date: date, evaluations: list[dict[str, Any]]
+) -> dict[str, Any]:
     path = root / "catalog.json"
     current = read_json(path, {"schema_version": SCHEMA_VERSION, "entries": []})
     by_name = {entry["full_name"]: entry for entry in current.get("entries", [])}
@@ -24,6 +27,7 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
                 "full_name": name,
                 "url": evaluation["url"],
                 "category": evaluation["category"],
+                "language": evaluation.get("language", entry.get("language")),
                 "hot_type": evaluation["hot_type"],
                 "first_accepted": entry.get("first_accepted", capture_date.isoformat()),
                 "last_evaluated": capture_date.isoformat(),
@@ -47,13 +51,18 @@ def update_catalog(root: Path, capture_date: date, evaluations: list[dict[str, A
         "candidate_source": "GitHub Trending",
         "dedupe_key": "full_name",
         "entry_count": len(by_name),
-        "entries": sorted(by_name.values(), key=lambda item: (-item["final_score"], item["full_name"].lower())),
+        "entries": sorted(
+            by_name.values(),
+            key=lambda item: (-item["final_score"], item["full_name"].lower()),
+        ),
     }
     atomic_json(path, payload)
     return payload
 
 
-def render_card(root: Path, repo: dict[str, Any], evaluation: dict[str, Any], capture_date: date) -> None:
+def render_card(
+    root: Path, repo: dict[str, Any], evaluation: dict[str, Any], capture_date: date
+) -> None:
     if evaluation["final"]["status"] != "accepted":
         return
     periods = evaluation["trend"]["period_stars"]
@@ -132,11 +141,17 @@ def render_index(root: Path, catalog: dict[str, Any]) -> None:
     lines = ["# GitHub Trending 项目索引", "", f"最后更新：{catalog['updated_at']}", ""]
     for period in PERIOD_ORDER:
         lines.extend([f"## {PERIOD_LABELS[period]}", ""])
-        entries = [entry for entry in catalog["entries"] if entry.get("primary_period", "weekly") == period]
+        entries = [
+            entry
+            for entry in catalog["entries"]
+            if entry.get("primary_period", "weekly") == period
+        ]
         if not entries:
             lines.append("暂无正式收录。")
         else:
-            lines.extend(["| 仓库 | 等级 | F | T | Q | V |", "|---|---:|---:|---:|---:|---:|"])
+            lines.extend(
+                ["| 仓库 | 等级 | F | T | Q | V |", "|---|---:|---:|---:|---:|---:|"]
+            )
             for entry in entries:
                 value_score = entry["value_score"]
                 lines.append(
@@ -147,6 +162,7 @@ def render_index(root: Path, catalog: dict[str, Any]) -> None:
     lines.append("候选范围为 GitHub Trending，不代表 GitHub 全站排名。")
     atomic_text(root / "index.md", "\n".join(lines) + "\n")
 
+
 def render_daily(
     root: Path,
     capture_date: date,
@@ -156,14 +172,24 @@ def render_daily(
     catalog: dict[str, Any],
     edition: dict[str, Any] | None = None,
 ) -> None:
-    accepted = sorted([e for e in evaluations if e["final"]["status"] == "accepted"], key=lambda e: -e["final"]["score"])
+    accepted = sorted(
+        [e for e in evaluations if e["final"]["status"] == "accepted"],
+        key=lambda e: -e["final"]["score"],
+    )
     featured = (
         featured_evaluations(edition, evaluations)
         if edition is not None
         else select_period_features(evaluations, catalog, capture_date)
     )
-    first_accepted = {entry["full_name"]: entry.get("first_accepted") for entry in catalog.get("entries", [])}
-    newly_accepted = [e for e in accepted if first_accepted.get(e["full_name"]) == capture_date.isoformat()]
+    first_accepted = {
+        entry["full_name"]: entry.get("first_accepted")
+        for entry in catalog.get("entries", [])
+    }
+    newly_accepted = [
+        e
+        for e in accepted
+        if first_accepted.get(e["full_name"]) == capture_date.isoformat()
+    ]
     rejected = [e for e in evaluations if e["final"]["status"] == "rejected"]
     lines = [
         f"# GitHub Trending 项目日报｜{capture_date.isoformat()}",
@@ -186,14 +212,26 @@ def render_daily(
         for e in chosen:
             period_stars = e["trend"]["period_stars"][period]
             value = evaluation_value(e)
-            lines.extend([
-                f"### {e['full_name']}", "", e["card"]["one_line"], "",
-                f"`{e['final']['grade']}` · T {e['trend']['score']} · Q {e['quality']['total']} · V {value['total']} · F {e['final']['score']} · {PERIOD_LABELS[period]}Stars {period_stars if period_stars is not None else '未展示'}",
-                "", f"[查看详细介绍](../repos/{e['full_name'].replace('/', '__')}.md)", ""
-            ])
+            lines.extend(
+                [
+                    f"### {e['full_name']}",
+                    "",
+                    e["card"]["one_line"],
+                    "",
+                    f"`{e['final']['grade']}` · T {e['trend']['score']} · Q {e['quality']['total']} · V {value['total']} · F {e['final']['score']} · {PERIOD_LABELS[period]}Stars {period_stars if period_stars is not None else '未展示'}",
+                    "",
+                    f"[查看详细介绍](../repos/{e['full_name'].replace('/', '__')}.md)",
+                    "",
+                ]
+            )
         lines.append("")
     atomic_text(root / "daily" / f"{capture_date.isoformat()}.md", "\n".join(lines))
     atomic_json(
         root / "rejections" / f"{capture_date.isoformat()}.json",
-        {"schema_version": SCHEMA_VERSION, "date": capture_date.isoformat(), "count": len(rejected), "entries": rejected},
+        {
+            "schema_version": SCHEMA_VERSION,
+            "date": capture_date.isoformat(),
+            "count": len(rejected),
+            "entries": rejected,
+        },
     )

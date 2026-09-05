@@ -69,3 +69,12 @@ python scripts/readme_translations.py validate --root .
 6. 正文以自然中文为主，不保留大段英文，不输出翻译说明或免责声明。
 7. 输出完整 Markdown，并使用指定 frontmatter；不要代码围栏包裹整个结果。
 ```
+
+## v5.1 原文绑定与结构关卡
+
+每个 manifest entry 另需 `source_artifact: readmes/sources/<source_sha256>.md`。该文件保存官方 raw 响应的原始字节；其 SHA-256 和字节数必须与 manifest 一致。可使用 `bind-sources` 从工作区内的官方原文目录按哈希绑定快照；该命令不生成或修复翻译正文。
+
+source-copy 比较正文与原文，仅忽略 frontmatter 分隔空白和 CRLF/LF、首尾分隔空白差异。英文译文的 CommonMark 可见围栏代码块必须逐块保留内容、顺序和语言标记，包括列表内的缩进代码块。标题层级和顺序应一致，仅允许开头增加一个中文 H1。隐藏 HTML 注释不作为未翻译英文正文。
+
+重复 full_name、相同正文换 frontmatter、缺失/篡改原文、丢失或改写代码块均导致校验失败。这些确定性检查证明结构与原文绑定关系，不代替逐段翻译语义审阅。普通浏览目录不会让未上榜项目被计入 README 覆盖集合。
+

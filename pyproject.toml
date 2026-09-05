@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "github-trending-ai-knowledge-base"
-version = "5.0.0"
+version = "5.1.0"
 description = "Deterministic GitHub Trending collection, evaluation, localization, and static publication workflow"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,7 @@ dependencies = [
   "bleach>=6.1,<7",
   "beautifulsoup4>=4.12,<5",
   "jsonschema>=4.23,<5",
+  "markdown-it-py>=4,<5",
 ]
 
 [project.scripts]
@@ -21,6 +22,8 @@ github-trending-engine = "github_trending_kb.engine:main"
 github-trending-build = "github_trending_kb.site_builder:main"
 github-trending-readmes = "github_trending_kb.localization:main"
 github-trending-validate-site = "github_trending_kb.site_validation:main"
+github-trending-run = "github_trending_kb.operations:main"
+github-trending-proof = "github_trending_kb.proof_archive:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
